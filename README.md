@@ -164,7 +164,7 @@ it as your own starting point.
 You need Xcode or the Command Line Tools (`xcode-select --install`).
 
 ```sh
-git clone https://github.com/USER/sieve.git
+git clone https://github.com/saikiran9185/sieve.git
 cd sieve
 ./build_app.sh
 open Sieve.app          # or drag it to /Applications

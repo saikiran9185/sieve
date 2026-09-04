@@ -1,0 +1,29 @@
+name: Bug report
+description: Something is broken or behaves wrongly
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations: { required: true }
+  - type: input
+    id: version
+    attributes:
+      label: Sieve version
+      placeholder: "1.0 — or the commit you built from"
+    validations: { required: true }
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "26.0 — Apple menu → About This Mac"
+    validations: { required: true }
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: >
+        A screenshot helps a lot for layout problems. If it involves a specific paper,
+        the DOI is more useful than the title. Please don't attach paywalled PDFs.

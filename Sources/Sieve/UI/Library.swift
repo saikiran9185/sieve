@@ -537,8 +537,11 @@ struct PaperRow: View {
                 HStack(spacing: 6) {
                     if !paper.url.isEmpty || !paper.doi.isEmpty {
                         Button {
-                            let s = paper.url.hasPrefix("http") ? paper.url : "https://doi.org/\(paper.doi)"
-                            if let u = URL(string: s) { NSWorkspace.shared.open(u) }
+                            if let u = SafeLink.forPaper(url: paper.url, doi: paper.doi) {
+                                SafeLink.open(u)
+                            } else {
+                                store.flash("That record has no usable web link")
+                            }
                         } label: { Image(systemName: "arrow.up.forward.square") }
                             .buttonStyle(.plain).foregroundStyle(.secondary)
                             .help("Open the source page")

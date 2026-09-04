@@ -1,0 +1,23 @@
+name: Add a database
+description: A source Sieve should be able to search
+labels: [database]
+body:
+  - type: input
+    id: name
+    attributes: { label: Database name }
+    validations: { required: true }
+  - type: input
+    id: api
+    attributes:
+      label: Link to its API documentation
+      description: >
+        Sieve can only add sources with a public API. Sites that forbid automated
+        querying (Google Scholar, BASE) get a browser hand-off instead — that already
+        exists under "No API" on the search screen.
+    validations: { required: true }
+  - type: dropdown
+    id: key
+    attributes:
+      label: Does it need an API key?
+      options: ["No", "Yes — free", "Yes — paid or institutional", "Not sure"]
+    validations: { required: true }

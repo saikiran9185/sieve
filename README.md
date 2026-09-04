@@ -173,19 +173,30 @@ open Sieve.app          # or drag it to /Applications
 That is the whole process — no package manager, no dependencies to fetch, no account.
 The build takes about 30 seconds.
 
-### Download the built app
+### Download the disk image
 
-A zipped `Sieve.app` is attached to each [release](../../releases).
+Grab **`Sieve-1.0.dmg`** from the [latest release](../../releases/latest), open it, and drag
+Sieve to Applications.
 
-It is signed ad-hoc, not notarised by Apple — I am not paying for a Developer ID to give
-away a research tool. macOS will therefore refuse to open it on first launch. To allow it:
+The app is signed with the hardened runtime but **not notarised by Apple** — notarisation
+requires a paid Developer ID, which I am not buying to give away a research tool. macOS will
+therefore refuse to open it the first time and may claim it is damaged. It is not. Clear the
+download quarantine flag:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Sieve.app
 ```
 
-Then open it normally. If you would rather not run that command, build from source above —
-it takes the same amount of time and you get to read what you are running.
+Then open it normally. The disk image contains the same instructions.
+
+Every release lists a SHA-256 checksum. Verify your download matches before opening it:
+
+```sh
+shasum -a 256 ~/Downloads/Sieve-1.0.dmg
+```
+
+If you would rather not run any of that, build from source above — it takes about the same
+amount of time and you get to read what you are running.
 
 ## Build
 
@@ -198,7 +209,24 @@ Requires Swift 6 / Xcode 16+. **No external dependencies** — SwiftUI, PDFKit a
 SQLite, nothing else. It builds and runs offline; the only network calls are the academic
 database searches you ask for.
 
-## Privacy
+## Windows and Linux
+
+There is no Windows or Linux build, and there will not be one without a substantial rewrite.
+
+Sieve's reader is built on **PDFKit** and its interface on **SwiftUI** and **AppKit**, all of
+which are Apple frameworks that exist only on macOS. The PDF reader is not a thin layer over
+the app — the text selection, the per-line highlight geometry, the annotations written back
+into the document — that *is* the app. Porting it means rebuilding that layer on something
+cross-platform and accepting a worse reading experience, which was the exact trade-off this
+project was started to avoid.
+
+What *is* portable is everything underneath: the fourteen database providers, the
+deduplication, the BibTeX/RIS parsing, the PDF section extraction, the PRISMA computation and
+every exporter are plain Swift with no Apple dependencies. Swift runs on Windows and Linux,
+so a cross-platform command-line tool or a web front end over that core is a realistic
+project for someone who wants it. Open an issue if that is you.
+
+## Privacy and security
 
 Everything lives in `~/Documents/Sieve` — one SQLite file and your PDFs. Nothing is sent
 anywhere except:
@@ -211,6 +239,23 @@ anywhere except:
 - the `claude` CLI on your own machine, if you turn the assistant on.
 
 There is no account, no telemetry, no sync server. Delete the folder and nothing remains.
+
+API keys are kept in the **Keychain**, not in a preferences file. Every link the app opens or
+fetches must be `http`/`https` with a real host, because those links arrive from external
+sources; `file://`, `javascript:` and custom app schemes are refused. Responses are
+size-capped, downloads are verified as real PDFs before being written, SQL is parameterised,
+and the app is built with the hardened runtime. Details, including what is deliberately *not*
+hardened, are in [SECURITY.md](SECURITY.md).
+
+## Feedback
+
+This has been used on exactly one real review — mine. If you use it on yours, the
+[feedback template](../../issues/new?template=feedback.yml) asks what got in your way, and
+that is the most useful thing you can send. Bugs, missing databases and layout problems all
+have templates too.
+
+Security issues go to a [private advisory](../../security/advisories/new), not a public
+issue. See [SECURITY.md](SECURITY.md).
 
 ## Contributing
 

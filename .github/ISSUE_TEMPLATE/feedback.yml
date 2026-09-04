@@ -1,0 +1,47 @@
+name: Feedback from using it
+description: How it worked, or didn't, on a real review
+labels: [feedback]
+body:
+  - type: dropdown
+    id: field
+    attributes:
+      label: What field do you work in?
+      description: Helps me understand who the tool is failing.
+      options:
+        - Design / HCI
+        - Health and medicine
+        - Social sciences
+        - Humanities
+        - Engineering / CS
+        - Natural sciences
+        - Other / prefer not to say
+    validations: { required: false }
+  - type: dropdown
+    id: method
+    attributes:
+      label: What kind of review?
+      options:
+        - Systematic review (PRISMA)
+        - Scoping review
+        - Ordinary literature review
+        - Thematic analysis
+        - Grounded theory
+        - Something else
+    validations: { required: false }
+  - type: textarea
+    id: worked
+    attributes:
+      label: What worked
+    validations: { required: false }
+  - type: textarea
+    id: didnt
+    attributes:
+      label: What got in your way
+      description: Be blunt. This is the useful part.
+    validations: { required: true }
+  - type: textarea
+    id: missing
+    attributes:
+      label: What was missing
+      description: What did you have to leave Sieve to do?
+    validations: { required: false }

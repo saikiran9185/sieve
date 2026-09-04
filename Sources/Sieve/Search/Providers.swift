@@ -16,9 +16,10 @@ protocol SearchProvider: Sendable {
 extension SearchProvider {
     var keyDefault: String? { nil }
     var signupURL: String? { nil }
+    /// Read from the Keychain, never from the preferences plist.
     var apiKey: String {
         guard let k = keyDefault else { return "" }
-        return (UserDefaults.standard.string(forKey: k) ?? "").trimmingCharacters(in: .whitespaces)
+        return KeyStore.get(k)
     }
     var needsKey: Bool { keyDefault != nil }
     var isReady: Bool { !needsKey || !apiKey.isEmpty }
@@ -99,10 +100,17 @@ enum Net {
         return URLSession(configuration: c)
     }()
 
+    /// Ceilings on what a remote server can make the app hold in memory. A hostile or
+    /// broken endpoint should not be able to stream gigabytes into a research tool.
+    static let maxResponseBytes = 8 * 1024 * 1024        // metadata responses
+    static let maxDownloadBytes = 200 * 1024 * 1024      // a PDF
+
     static func json(_ url: URL, headers: [String: String] = [:], retryOn429: Int = 0) async throws -> Any {
-        var req = URLRequest(url: url)
+        guard let safe = SafeLink.web(url) else { throw badScheme(url) }
+        var req = URLRequest(url: safe)
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
         let (data, resp) = try await session.data(for: req)
+        try check(size: data.count, limit: maxResponseBytes, from: safe)
         if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
             if http.statusCode == 429, retryOn429 > 0 {
                 try await Task.sleep(nanoseconds: 2_500_000_000)
@@ -115,8 +123,36 @@ enum Net {
     }
 
     static func text(_ url: URL) async throws -> Data {
-        let (data, _) = try await session.data(from: url)
+        guard let safe = SafeLink.web(url) else { throw badScheme(url) }
+        let (data, _) = try await session.data(from: safe)
+        try check(size: data.count, limit: maxResponseBytes, from: safe)
         return data
+    }
+
+    /// Downloads a file, refusing anything that is not web traffic or is implausibly large.
+    static func download(_ url: URL, limit: Int = maxDownloadBytes) async throws -> Data {
+        guard let safe = SafeLink.web(url) else { throw badScheme(url) }
+        var req = URLRequest(url: safe)
+        req.timeoutInterval = 90
+        let (data, resp) = try await session.data(for: req)
+        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
+            throw NSError(domain: "Sieve", code: http.statusCode,
+                          userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode) from \(safe.host ?? "server")"])
+        }
+        try check(size: data.count, limit: limit, from: safe)
+        return data
+    }
+
+    private static func check(size: Int, limit: Int, from url: URL) throws {
+        guard size <= limit else {
+            throw NSError(domain: "Sieve", code: 413, userInfo: [NSLocalizedDescriptionKey:
+                "\(url.host ?? "That server") sent more than \(limit / 1024 / 1024) MB — refused."])
+        }
+    }
+
+    private static func badScheme(_ url: URL) -> NSError {
+        NSError(domain: "Sieve", code: 400, userInfo: [NSLocalizedDescriptionKey:
+            "Refused to open “\(url.scheme ?? "?")://” — Sieve only makes ordinary web requests."])
     }
 
     static func enc(_ s: String) -> String {
@@ -276,6 +312,11 @@ final class AtomParser: NSObject, XMLParserDelegate {
     static func parse(_ data: Data, provider: String) -> [SearchHit] {
         let p = AtomParser(provider: provider)
         let parser = XMLParser(data: data)
+        // Explicit, though this is already the platform default: never fetch anything a
+        // document references. Untrusted XML must not be able to make the app open a file
+        // or reach a network host of its choosing.
+        parser.shouldResolveExternalEntities = false
+        parser.externalEntityResolvingPolicy = .never
         parser.delegate = p
         parser.parse()
         return p.hits

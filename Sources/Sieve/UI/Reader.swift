@@ -374,9 +374,8 @@ struct ReaderScreen: View {
 
                 if !p.url.isEmpty {
                     Button("Open publisher page") {
-                        if let u = URL(string: p.url.hasPrefix("http") ? p.url : "https://doi.org/\(p.doi)") {
-                            NSWorkspace.shared.open(u)
-                        }
+                        SafeLink.open(SafeLink.forPaper(url: p.url, doi: p.doi)
+                                      ?? URL(fileURLWithPath: "/"))
                     }
                 }
                 Button("Attach a PDF…") { attachPDF(to: p) }

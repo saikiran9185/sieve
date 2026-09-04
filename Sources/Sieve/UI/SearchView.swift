@@ -149,8 +149,10 @@ struct SearchView: View {
     private func openExternal(_ site: ExternalSite) {
         let q = engine.query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { store.flash("Type a search first"); return }
-        guard let url = site.url(for: q) else { return }
-        NSWorkspace.shared.open(url)
+        guard let url = site.url(for: q), SafeLink.open(url) else {
+            store.flash("Could not open \(site.name)")
+            return
+        }
         store.flash("Opened \(site.name). \(site.howTo)")
     }
 
@@ -431,9 +433,7 @@ struct HitRow: View {
                     }
                     if !hit.url.isEmpty {
                         Button {
-                            if let u = URL(string: hit.url.hasPrefix("http") ? hit.url : "https://doi.org/\(hit.doi)") {
-                                NSWorkspace.shared.open(u)
-                            }
+                            if let u = SafeLink.forPaper(url: hit.url, doi: hit.doi) { SafeLink.open(u) }
                         } label: { Image(systemName: "arrow.up.forward.square") }
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help(hit.url)

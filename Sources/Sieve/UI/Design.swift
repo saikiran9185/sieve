@@ -250,7 +250,7 @@ struct ExternalSitesSheet: View {
                                 Spacer()
                                 Button("Open") {
                                     guard let u = site.url(for: query) else { return }
-                                    NSWorkspace.shared.open(u)
+                                    SafeLink.open(u)
                                 }
                                 .buttonStyle(.bordered)
                                 .disabled(query.trimmingCharacters(in: .whitespaces).isEmpty)

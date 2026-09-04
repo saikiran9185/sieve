@@ -88,8 +88,7 @@ struct COREProvider: SearchProvider {
         // Trailing slash matters: without it the API 301s and the body is lost.
         let s = "https://api.core.ac.uk/v3/search/works/?q=\(Net.enc(query))&limit=\(min(limit, 100))"
         guard let url = URL(string: s) else { return [] }
-        let key = (UserDefaults.standard.string(forKey: "sieve.corekey") ?? "")
-            .trimmingCharacters(in: .whitespaces)
+        let key = KeyStore.get("sieve.corekey")
         let headers = key.isEmpty ? [:] : ["Authorization": "Bearer \(key)"]
         let root = dict(try await Net.json(url, headers: headers, retryOn429: 1))
         return arr(root["results"]).compactMap { item -> SearchHit? in

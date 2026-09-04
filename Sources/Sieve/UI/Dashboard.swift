@@ -298,7 +298,7 @@ struct SettingsView: View {
     @State private var draft: Project? = nil
     @AppStorage("sieve.contactEmail") private var contactEmail = ""
     @AppStorage("sieve.ai") private var aiEnabled = true
-    @AppStorage("sieve.s2key") private var s2Key = ""
+
 
     /// CORE takes an optional key that only raises its rate limit, so it isn't declared
     /// as a gating `keyDefault` — but the field still belongs in Settings.
@@ -307,9 +307,8 @@ struct SettingsView: View {
     }
 
     private func keyBinding(_ name: String) -> Binding<String> {
-        Binding(get: { UserDefaults.standard.string(forKey: name) ?? "" },
-                set: { UserDefaults.standard.set($0.trimmingCharacters(in: .whitespaces), forKey: name)
-                       engineRefresh += 1 })
+        Binding(get: { KeyStore.get(name) },
+                set: { KeyStore.set($0, for: name); engineRefresh += 1 })
     }
 
     @State private var engineRefresh = 0

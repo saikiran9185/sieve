@@ -211,16 +211,16 @@ final class Downloader: ObservableObject {
         defer { active[paper.id] = nil }
 
         guard let link = await OAResolver.resolve(doi: paper.doi, knownPDF: paper.pdfURL, email: email),
-              let url = URL(string: link) else {
+              let url = SafeLink.web(link) else {
             store.flash("No open-access PDF found for “\(paper.title.prefix(40))…”. Drop the PDF in by hand.")
             return
         }
         active[paper.id] = "Downloading…"
         do {
-            let (data, _) = try await Net.session.data(from: url)
+            let data = try await Net.download(url)
             guard data.count > 1000, data.prefix(5) == Data("%PDF-".utf8) else {
                 store.flash("That link returned a web page, not a PDF. Opening it in your browser instead.")
-                NSWorkspace.shared.open(url)
+                SafeLink.open(url)
                 return
             }
             let dest = Library.pdfDir.appendingPathComponent(Self.filename(for: paper))

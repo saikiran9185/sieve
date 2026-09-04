@@ -512,7 +512,7 @@ struct SuggestionPanel: View {
                                 }
                                 .buttonStyle(.bordered).controlSize(.small)
                                 if !s.doi.isEmpty {
-                                    Button { NSWorkspace.shared.open(URL(string: "https://doi.org/\(s.doi)")!) }
+                                    Button { SafeLink.open("https://doi.org/\(s.doi)") }
                                         label: { Image(systemName: "arrow.up.forward.square") }
                                         .buttonStyle(.plain).foregroundStyle(.secondary)
                                 }

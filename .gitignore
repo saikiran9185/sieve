@@ -2,4 +2,8 @@
 .swiftpm/
 *.app/
 *.xcodeproj/
+# Release artefacts are attached to the GitHub release, never committed to the repo.
+*.dmg
+*.zip
+*.entitlements
 .DS_Store

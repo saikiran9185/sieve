@@ -312,6 +312,7 @@ struct SettingsView: View {
     }
 
     @State private var engineRefresh = 0
+    @State private var appearanceTick = 0
 
     var body: some View {
         ScrollView {
@@ -340,6 +341,56 @@ struct SettingsView: View {
                         }
                         Text("Screening checks each record against these, and Claude uses them verbatim when you ask for a recommendation.")
                             .font(D.small).foregroundStyle(.tertiary)
+                    }
+                }
+
+                group("Appearance") {
+                    Picker("", selection: Binding(
+                        get: { Appearance.current },
+                        set: { Appearance.current = $0; appearanceTick += 1 })) {
+                        ForEach(Appearance.allCases) { a in
+                            Label(a.label, systemImage: a.icon).tag(a)
+                        }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 340)
+                    Text("Tag colours darken automatically in light mode so they still carry text.")
+                        .font(D.small).foregroundStyle(.secondary)
+                }
+
+                group("Evidence for retrieval") {
+                    Toggle(isOn: Binding(
+                        get: { store.strictRetrieval },
+                        set: { store.strictRetrieval = $0 })) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("A report counts as retrieved only if its PDF is on disk").font(D.body)
+                            Text("PRISMA separates reports sought from reports retrieved. With this on, a record with no readable full text is counted as “not retrieved”, however you screened it — the file is the proof.")
+                                .font(D.small).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    let missing = store.missingFullTexts.count
+                    let broken = store.brokenPDFs.count
+                    if missing > 0 || broken > 0 {
+                        HStack(spacing: D.s2) {
+                            if missing > 0 {
+                                Chip(text: "\(missing) past screening with no PDF",
+                                     color: Palette.amber, icon: "exclamationmark.triangle.fill")
+                            }
+                            if broken > 0 {
+                                Chip(text: "\(broken) unreadable file\(broken == 1 ? "" : "s")",
+                                     color: Palette.rose, icon: "xmark.octagon.fill")
+                            }
+                            Spacer()
+                            Button("Mark the missing ones as not retrieved") {
+                                let n = store.markMissingAsNotRetrieved()
+                                store.flash(n == 0 ? "Nothing to change"
+                                                   : "Moved \(n) records to “not retrieved”")
+                            }
+                            .font(D.small)
+                        }
+                    } else {
+                        Text("Every record past screening has a verified full text.")
+                            .font(D.small).foregroundStyle(Palette.emerald)
                     }
                 }
 

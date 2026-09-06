@@ -495,7 +495,12 @@ struct PaperRow: View {
                         Chip(text: f.name, color: f.color, icon: "folder")
                     }
                     if !paper.sourceDB.isEmpty { Chip(text: paper.sourceDB, color: Palette.slate) }
-                    if paper.hasPDF { Chip(text: "PDF", color: Palette.emerald, icon: "doc.fill") }
+                    if paper.hasPDF {
+                        Chip(text: "PDF · \(paper.pdfProof.pages)p", color: Palette.emerald,
+                             icon: "checkmark.seal.fill")
+                    } else if paper.pdfBroken {
+                        Chip(text: "file unreadable", color: Palette.rose, icon: "xmark.octagon.fill")
+                    }
                     let n = store.evidence(forPaper: paper.id).count
                     if n > 0 { Chip(text: "\(n) highlights", color: Palette.amber, icon: "highlighter") }
                     ForEach(paper.sdgs.prefix(2), id: \.self) { Chip(text: $0, color: Palette.violet, icon: "globe") }

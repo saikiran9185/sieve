@@ -93,6 +93,37 @@ struct PrismaView: View {
     private var warnings: some View {
         let untriaged = store.papers.filter { $0.stage == .identified || $0.stage == .screening }.count
         let noReason = store.papers.filter { $0.stage == .excludedEligibility && $0.excludeReason.isEmpty }.count
+        let missing = store.missingFullTexts.count
+
+        if missing > 0 {
+            Card {
+                VStack(alignment: .leading, spacing: D.s2) {
+                    Label("\(missing) record\(missing == 1 ? "" : "s") passed screening with no full text",
+                          systemImage: "doc.badge.ellipsis")
+                        .font(D.heading).foregroundStyle(Palette.amber)
+                    Text(store.strictRetrieval
+                         ? "PRISMA is counting \(missing == 1 ? "it" : "them") under “reports not retrieved”, because there is no PDF on disk to show the report was obtained. Download or attach the files, or record the decision properly."
+                         : "These are being counted as retrieved even though no PDF was obtained. Turn on the evidence rule in Settings to count them honestly.")
+                        .font(D.small)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Button("Show me which") { drill = .notRetrieved }.font(D.small)
+                        Button("Mark them as not retrieved") {
+                            let n = store.markMissingAsNotRetrieved()
+                            store.flash("Moved \(n) records to “not retrieved”")
+                        }
+                        .font(D.small)
+                        Spacer()
+                        Toggle("Require a PDF as proof", isOn: Binding(
+                            get: { store.strictRetrieval },
+                            set: { store.strictRetrieval = $0 }))
+                            .toggleStyle(.switch).font(D.small)
+                    }
+                }
+            }
+            .background(Palette.amber.opacity(0.07))
+        }
+
         if untriaged > 0 || noReason > 0 {
             Card {
                 VStack(alignment: .leading, spacing: D.s2) {

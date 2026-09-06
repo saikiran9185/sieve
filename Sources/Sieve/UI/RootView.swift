@@ -75,6 +75,7 @@ struct RootView: View {
             Button("OK") { store.lastError = nil }
         } message: { Text(store.lastError ?? "") }
         .sheet(isPresented: $nav.showNewProject) { NewProjectSheet() }
+        .sheet(isPresented: $nav.showShortcuts) { ShortcutSheet { nav.showShortcuts = false } }
         .onChange(of: nav.requestImportPDF) { _, v in if v { nav.requestImportPDF = false; chooseFiles(pdf: true) } }
         .onChange(of: nav.requestImportBib) { _, v in if v { nav.requestImportBib = false; chooseFiles(pdf: false) } }
     }

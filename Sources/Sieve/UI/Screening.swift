@@ -7,6 +7,8 @@ struct ScreeningView: View {
     @EnvironmentObject var store: Store
     @EnvironmentObject var assistant: Assistant
     @EnvironmentObject var nav: Navigator
+    @EnvironmentObject var downloader: Downloader
+    @EnvironmentObject var engine: SearchEngine
     @State private var mode: Mode = .titleAbstract
     @State private var selectedId: Int? = nil
     @State private var verdict: Assistant.ScreenVerdict? = nil
@@ -17,6 +19,8 @@ struct ScreeningView: View {
     @State private var customReason = ""
     @State private var filter = ""
     @AppStorage("sieve.screeningQueueWidth") private var queueWidth: Double = 300
+    @AppStorage("sieve.screeningRailWidth") private var railWidth: Double = 260
+    @State private var showShortcuts = false
 
     enum Mode: String, CaseIterable, Identifiable {
         case titleAbstract = "Title & abstract"
@@ -62,6 +66,7 @@ struct ScreeningView: View {
         .onAppear { installKeys(); if selectedId == nil { selectedId = queue.first?.id } }
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil } }
         .onChange(of: mode) { _, _ in selectedId = queue.first?.id; verdict = nil }
+        .sheet(isPresented: $showShortcuts) { ShortcutSheet { showShortcuts = false } }
         .onChange(of: selectedId) { _, _ in
             verdict = nil
             // Reading a PDF's sections costs milliseconds, so the conclusion is simply there
@@ -172,60 +177,296 @@ struct ScreeningView: View {
     @ViewBuilder
     private var detail: some View {
         if let p = current {
-            VStack(spacing: 0) {
-                ZStack {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: D.s4) {
-                            heading(p)
-                            if let proj = store.project,
-                               !proj.inclusionCriteria.isEmpty || !proj.exclusionCriteria.isEmpty {
-                                HStack(alignment: .top, spacing: D.s3) {
-                                    criteriaCard("Include if", proj.inclusionCriteria, Palette.emerald)
-                                    criteriaCard("Exclude if", proj.exclusionCriteria, Palette.rose)
-                                }
+            HStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: D.s4) {
+                        heading(p)
+                        if let proj = store.project,
+                           !proj.inclusionCriteria.isEmpty || !proj.exclusionCriteria.isEmpty {
+                            HStack(alignment: .top, spacing: D.s3) {
+                                criteriaCard("Include if", proj.inclusionCriteria, Palette.emerald)
+                                criteriaCard("Exclude if", proj.exclusionCriteria, Palette.rose)
                             }
-                            if let v = verdict { verdictCard(v) }
-                            keywordsBlock(p)
-                            abstractBlock(p)
-                            conclusionBlock(p)
-                            notesBlock(p)
                         }
-                        .padding(D.s5)
-                        .padding(.horizontal, 28)          // room for the side arrows
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        if let v = verdict { verdictCard(v) }
+                        keywordsBlock(p)
+                        abstractBlock(p)
+                        conclusionBlock(p)
+                        notesBlock(p)
                     }
-                    sideArrows
+                    .padding(D.s5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Divider()
-                decisionBar(p)
+                .frame(maxWidth: .infinity)
+
+                PaneDivider(width: $railWidth, range: 220...340, sizesTrailingPane: true)
+
+                // The decision never scrolls away. Screening is hundreds of repetitions of
+                // the same two choices, so the choices stay pinned where the hand already is.
+                decisionRail(p)
+                    .frame(width: railWidth)
             }
         } else {
             EmptyState(icon: "doc.text", title: "Nothing selected", message: "Pick a record on the left.")
         }
     }
 
-    /// Big click targets pinned to the left and right edges — the same movement as flicking
-    /// through cards, without hunting for a button.
-    private var sideArrows: some View {
-        HStack {
-            arrowButton("chevron.left", enabled: index > 0) { step(-1) }
-            Spacer()
-            arrowButton("chevron.right", enabled: index < queue.count - 1) { step(1) }
+    // MARK: The decision rail
+
+    private func decisionRail(_ p: Paper) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: D.s4) {
+                    progressBlock
+                    if mode == .decided { decidedActions(p) } else { activeActions(p) }
+                    navBlock
+                    fullTextBlock(p)
+                }
+                .padding(D.s3)
+            }
+            Divider()
+            shortcutFooter
         }
-        .padding(.horizontal, 4)
+        .background(D.raised)
     }
 
-    private func arrowButton(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 34, height: 58)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(D.hairline, lineWidth: 0.5))
+    private var progressBlock: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("\(index + 1) of \(queue.count)")
+                    .font(D.small.monospacedDigit().weight(.medium))
+                Spacer()
+                if mode != .decided {
+                    Text("\(queue.count) left").font(D.small).foregroundStyle(.secondary)
+                }
+            }
+            ProgressView(value: Double(index + 1), total: Double(max(queue.count, 1)))
+                .progressViewStyle(.linear)
+        }
+    }
+
+    /// Include and exclude, both full width and unmissable, with every exclusion reason
+    /// already on screen — no popover, no second click to find out what the options are.
+    private func activeActions(_ p: Paper) -> some View {
+        VStack(alignment: .leading, spacing: D.s3) {
+            Button {
+                decide(mode == .titleAbstract ? .sought : .included)
+            } label: {
+                VStack(spacing: 2) {
+                    Label(mode == .titleAbstract ? "Keep" : "Include", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(mode == .titleAbstract ? "get the full text" : "into the review")
+                        .font(.system(size: 10)).opacity(0.85)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Palette.emerald)
+            .keyboardShortcut("f", modifiers: [])
+            .help("Keep this record — F")
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 11))
+                        .foregroundStyle(Palette.rose)
+                    Text("EXCLUDE — PICK A REASON")
+                        .font(.system(size: 9.5, weight: .bold)).tracking(0.5)
+                        .foregroundStyle(Palette.rose)
+                }
+                Text("PRISMA needs a reason for every exclusion.")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+
+                ForEach(Array(ExcludeButton.commonReasons.enumerated()), id: \.offset) { i, reason in
+                    Button {
+                        decide(mode == .titleAbstract ? .excludedScreening : .excludedEligibility,
+                               reason: reason)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(i < 9 ? "\(i + 1)" : " ")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .frame(width: 13, height: 13)
+                                .background(Palette.rose.opacity(0.16))
+                                .clipShape(RoundedRectangle(cornerRadius: 3))
+                                .foregroundStyle(Palette.rose)
+                            Text(reason).font(D.small).lineLimit(1)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 7).padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Palette.rose.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(i < 9 ? "Exclude — \(reason)  (press \(i + 1))" : "Exclude — \(reason)")
+                }
+
+                HStack(spacing: 4) {
+                    TextField("Other reason…", text: $customReason)
+                        .textFieldStyle(.roundedBorder).font(D.small)
+                        .onSubmit { commitCustom() }
+                    Button {
+                        commitCustom()
+                    } label: { Image(systemName: "arrow.right.circle.fill") }
+                        .buttonStyle(.plain)
+                        .disabled(customReason.isEmpty)
+                        .foregroundStyle(customReason.isEmpty ? Color.secondary.opacity(0.4) : Palette.rose)
+                }
+            }
+        }
+    }
+
+    private func decidedActions(_ p: Paper) -> some View {
+        VStack(alignment: .leading, spacing: D.s3) {
+            VStack(alignment: .leading, spacing: 4) {
+                SectionLabel(text: "Current decision")
+                StageBadge(stage: p.stage)
+                if !p.excludeReason.isEmpty {
+                    Text(p.excludeReason).font(D.small).foregroundStyle(.secondary)
+                }
+            }
+            Button {
+                store.setStage(p.id, .screening, reason: "")
+                store.flash("Back in the screening queue")
+            } label: {
+                Label("Undo this decision", systemImage: "arrow.uturn.backward")
+                    .frame(maxWidth: .infinity).padding(.vertical, 5)
+            }
+            .buttonStyle(.bordered)
+
+            if p.stage == .included {
+                Button {
+                    decide(.excludedEligibility, reason: "Reconsidered after inclusion")
+                } label: {
+                    Label("Exclude instead", systemImage: "xmark")
+                        .frame(maxWidth: .infinity).padding(.vertical, 5)
+                }
+                .buttonStyle(.bordered).tint(Palette.rose)
+            } else {
+                Button {
+                    decide(.included, reason: "")
+                } label: {
+                    Label("Include instead", systemImage: "checkmark")
+                        .frame(maxWidth: .infinity).padding(.vertical, 5)
+                }
+                .buttonStyle(.borderedProminent).tint(Palette.emerald)
+            }
+        }
+    }
+
+    private var navBlock: some View {
+        HStack(spacing: 5) {
+            Button { step(-1) } label: {
+                Image(systemName: "chevron.left").frame(maxWidth: .infinity).padding(.vertical, 3)
+            }
+            .disabled(index == 0).help("Previous — K or ←")
+            Button { step(1) } label: {
+                Label("Skip", systemImage: "chevron.right")
+                    .frame(maxWidth: .infinity).padding(.vertical, 3)
+            }
+            .disabled(index >= queue.count - 1).help("Next without deciding — J or →")
+        }
+        .buttonStyle(.bordered)
+    }
+
+    /// The full-text status, stated as fact rather than intention: a verified PDF on disk,
+    /// or an honest account of what is missing.
+    private func fullTextBlock(_ p: Paper) -> some View {
+        let proof = p.pdfProof
+        return VStack(alignment: .leading, spacing: 6) {
+            SectionLabel(text: "Full text")
+            if proof.retrieved {
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Palette.emerald)
+                        .font(.system(size: 11))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("PDF verified").font(D.small.weight(.medium))
+                        Text("\(proof.pages) pages · \(proof.sizeText)")
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                }
+                Button { nav.read(p.id) } label: {
+                    Label("Read", systemImage: "book.fill")
+                        .frame(maxWidth: .infinity).padding(.vertical, 4)
+                }
+                .buttonStyle(.bordered).help("Open in the reader — R")
+                Button { extractSections(p) } label: {
+                    Label("Re-read the PDF", systemImage: "doc.text.magnifyingglass")
+                        .font(D.small).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+            } else if p.pdfBroken {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.rose)
+                    Text("The attached file can't be read").font(D.small).foregroundStyle(Palette.rose)
+                }
+                Text("Moved, deleted, or not a real PDF. PRISMA counts this as not retrieved.")
+                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                fetchButton(p)
+            } else {
+                HStack(spacing: 5) {
+                    Image(systemName: "doc.badge.plus").foregroundStyle(.secondary)
+                    Text("No PDF yet").font(D.small).foregroundStyle(.secondary)
+                }
+                if store.strictRetrieval {
+                    Text("Without one this can't count as retrieved in PRISMA.")
+                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                fetchButton(p)
+            }
+        }
+        .padding(D.s2 + 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(D.surface)
+        .clipShape(RoundedRectangle(cornerRadius: D.radius))
+        .hairlineBorder()
+    }
+
+    private func fetchButton(_ p: Paper) -> some View {
+        VStack(spacing: 4) {
+            Button {
+                Task { await downloader.fetch(paper: p, store: store, email: engine.contactEmail) }
+            } label: {
+                if downloader.active[p.id] != nil {
+                    HStack(spacing: 4) { ProgressView().controlSize(.small); Text("…").font(D.small) }
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Label("Get free PDF", systemImage: "arrow.down.circle")
+                        .font(D.small).frame(maxWidth: .infinity).padding(.vertical, 3)
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(downloader.active[p.id] != nil)
+
+            if !p.url.isEmpty || !p.doi.isEmpty {
+                Button {
+                    if let u = SafeLink.forPaper(url: p.url, doi: p.doi) { SafeLink.open(u) }
+                } label: {
+                    Label("Publisher page", systemImage: "arrow.up.forward.square")
+                        .font(.system(size: 10)).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var shortcutFooter: some View {
+        Button { showShortcuts = true } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "keyboard").font(.system(size: 10))
+                Text("F keep · 1–9 exclude · J next").font(.system(size: 10))
+                Spacer()
+                Text("?").font(.system(size: 10, weight: .bold, design: .monospaced))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, D.s3).padding(.vertical, 6)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
-        .opacity(enabled ? 0.9 : 0.25)
+        .help("All keyboard shortcuts — press ?")
     }
 
     private func heading(_ p: Paper) -> some View {
@@ -421,98 +662,11 @@ struct ScreeningView: View {
         .background(Palette.violet.opacity(0.05))
     }
 
-    // MARK: Bottom bar
-
-    private func decisionBar(_ p: Paper) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: D.s3) {
-                Button { step(-1) } label: { Label("Previous", systemImage: "chevron.left") }
-                    .disabled(index == 0)
-                Button { step(1) } label: { Label("Next", systemImage: "chevron.right") }
-                    .disabled(index >= queue.count - 1)
-
-                Spacer()
-
-                if p.hasPDF {
-                    Button { extractSections(p) } label: {
-                        Label("Re-read the PDF", systemImage: "doc.text.magnifyingglass")
-                    }
-                    .help("Pull the abstract, keywords and conclusion out of the PDF again")
-                }
-                if p.hasPDF || !p.pdfURL.isEmpty {
-                    Button { nav.read(p.id) } label: { Label("Read full text", systemImage: "book") }
-                }
-
-                if mode == .decided {
-                    // Any decision can be taken back — that is the whole point of this tab.
-                    Button {
-                        store.setStage(p.id, .screening, reason: "")
-                        store.flash("Sent back to screening — decide again when you're ready")
-                    } label: { Label("Undo decision", systemImage: "arrow.uturn.backward") }
-                        .buttonStyle(.bordered)
-                    if p.stage != .included {
-                        Button { store.setStage(p.id, .included, reason: "") } label: {
-                            Label("Include instead", systemImage: "checkmark")
-                        }
-                        .buttonStyle(.borderedProminent).tint(Palette.emerald)
-                    } else {
-                        Button { showExclude = true } label: { Label("Exclude instead", systemImage: "xmark") }
-                            .buttonStyle(.bordered).tint(Palette.rose)
-                            .popover(isPresented: $showExclude) { excludePopover }
-                    }
-                } else {
-                    Button { showExclude = true } label: {
-                        Label("Exclude…", systemImage: "xmark").frame(width: 92)
-                    }
-                    .buttonStyle(.bordered).tint(Palette.rose)
-                    .popover(isPresented: $showExclude) { excludePopover }
-
-                    Button {
-                        decide(mode == .titleAbstract ? .sought : .included)
-                    } label: {
-                        Label(mode == .titleAbstract ? "Keep — get full text" : "Include in review",
-                              systemImage: "checkmark")
-                    }
-                    .buttonStyle(.borderedProminent).tint(Palette.emerald)
-                }
-            }
-            .padding(.horizontal, D.s4).padding(.vertical, D.s3)
-
-            Text(mode == .decided
-                 ? "Decisions are never final — reopen any record here"
-                 : "I include · E exclude · → next · ← previous")
-                .font(.system(size: 10)).foregroundStyle(.tertiary)
-                .padding(.bottom, 6)
-        }
-        .background(.bar)
-    }
-
-    private var excludePopover: some View {
-        VStack(alignment: .leading, spacing: D.s2) {
-            Text("Reason for exclusion").font(D.heading)
-            Text("Recorded against the paper and counted in your PRISMA diagram.")
-                .font(D.small).foregroundStyle(.secondary)
-            ForEach(ExcludeButton.commonReasons, id: \.self) { r in
-                Button(r) {
-                    decide(mode == .titleAbstract ? .excludedScreening : .excludedEligibility, reason: r)
-                    showExclude = false
-                }
-                .buttonStyle(.plain).font(D.body)
-            }
-            Divider()
-            HStack {
-                TextField("Other…", text: $customReason).textFieldStyle(.roundedBorder)
-                    .onSubmit { commitCustom() }
-                Button("Exclude") { commitCustom() }.disabled(customReason.isEmpty)
-            }
-        }
-        .padding(D.s4).frame(width: 330)
-    }
-
     private func commitCustom() {
-        guard !customReason.isEmpty else { return }
-        decide(mode == .titleAbstract ? .excludedScreening : .excludedEligibility, reason: customReason)
-        customReason = ""; showExclude = false
+        let reason = customReason.trimmingCharacters(in: .whitespaces)
+        guard !reason.isEmpty else { return }
+        decide(mode == .titleAbstract ? .excludedScreening : .excludedEligibility, reason: reason)
+        customReason = ""
     }
 
     // MARK: Actions
@@ -576,23 +730,147 @@ struct ScreeningView: View {
         store.flash("Claude left a recommendation on \(batch.count) records — decisions are still yours")
     }
 
+    /// Shortcuts chosen so the left hand can stay on the home row through a whole screening
+    /// session. Nothing here needs a modifier or a reach across the keyboard.
+    ///
+    ///   F  keep          D  exclude (no reason recorded)
+    ///   1–9 exclude with that reason, straight from the list on the right
+    ///   J / K  next and previous, ← → also work
+    ///   R  open the full text     ?  this list
     private func installKeys() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard nav.section == .screening, !event.modifierFlags.contains(.command) else { return event }
-            // Never steal a keystroke while a note is being typed.
+            // Never steal a keystroke while a note or a reason is being typed.
             if NSApp.keyWindow?.firstResponder is NSTextView { return event }
+
             switch event.keyCode {
-            case 124: step(1); return nil
-            case 123: step(-1); return nil
+            case 124: step(1); return nil            // →
+            case 123: step(-1); return nil           // ←
+            case 125: step(1); return nil            // ↓
+            case 126: step(-1); return nil           // ↑
             default: break
             }
+
+            guard let chars = event.charactersIgnoringModifiers?.lowercased() else { return event }
+
+            if chars == "?" || (chars == "/" && event.modifierFlags.contains(.shift)) {
+                showShortcuts.toggle(); return nil
+            }
+            if chars == "j" { step(1); return nil }
+            if chars == "k" { step(-1); return nil }
+            if chars == "r" {
+                if let p = current, p.hasPDF { nav.read(p.id) }
+                return nil
+            }
             guard mode != .decided else { return event }
-            switch event.charactersIgnoringModifiers?.lowercased() {
-            case "i": decide(mode == .titleAbstract ? .sought : .included); return nil
-            case "e": decide(mode == .titleAbstract ? .excludedScreening : .excludedEligibility); return nil
+
+            // A digit picks the exclusion reason at that position in the rail, so the reason
+            // is recorded without ever reaching for the mouse.
+            if let digit = Int(chars), (1...9).contains(digit),
+               ExcludeButton.commonReasons.indices.contains(digit - 1) {
+                decide(mode == .titleAbstract ? .excludedScreening : .excludedEligibility,
+                       reason: ExcludeButton.commonReasons[digit - 1])
+                return nil
+            }
+
+            switch chars {
+            case "f", "i": decide(mode == .titleAbstract ? .sought : .included); return nil
+            case "d", "e": decide(mode == .titleAbstract ? .excludedScreening : .excludedEligibility)
+                           return nil
             default: return event
             }
         }
+    }
+}
+
+/// The shortcut reference, opened with `?`. Screening is repetitive by nature; the keys are
+/// what stop it being repetitive with a mouse.
+struct ShortcutSheet: View {
+    var done: () -> Void
+
+    private struct Row: Identifiable {
+        let id = UUID()
+        let keys: [String]
+        let what: String
+        let note: String
+    }
+
+    private let screening: [Row] = [
+        .init(keys: ["F"], what: "Keep this record", note: "Index finger, home row"),
+        .init(keys: ["1", "…", "9"], what: "Exclude with that reason", note: "Position in the list on the right"),
+        .init(keys: ["D"], what: "Exclude without a reason", note: "PRISMA wants a reason — prefer 1–9"),
+        .init(keys: ["J"], what: "Next record", note: "Or → / ↓"),
+        .init(keys: ["K"], what: "Previous record", note: "Or ← / ↑"),
+        .init(keys: ["R"], what: "Open the full text", note: ""),
+        .init(keys: ["?"], what: "This list", note: ""),
+    ]
+
+    private let reader: [Row] = [
+        .init(keys: ["1", "…", "9"], what: "Highlight the selection in that colour",
+              note: "The number shown next to each tag"),
+        .init(keys: ["E"], what: "Record as evidence", note: "What the source says"),
+        .init(keys: ["I"], what: "Record as interpretation", note: "What you think"),
+        .init(keys: ["Q"], what: "Record as a question", note: "What you don't know yet"),
+        .init(keys: ["["], what: "Previous paper", note: "] for the next one"),
+        .init(keys: ["⌘", "F"], what: "Find in the document", note: ""),
+    ]
+
+    private let app: [Row] = [
+        .init(keys: ["⌘", "1", "…", "9"], what: "Jump to a section", note: "In sidebar order"),
+        .init(keys: ["⌘", "O"], what: "Import PDFs", note: ""),
+        .init(keys: ["⌘", "⇧", "I"], what: "Import .bib / .ris", note: ""),
+        .init(keys: ["⌘", "⇧", "N"], what: "New review", note: ""),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: D.s4) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Keyboard shortcuts").font(D.title)
+                Text("Screening keys sit under the left hand so you can work through a queue without moving it.")
+                    .font(D.small).foregroundStyle(.secondary)
+            }
+            HStack(alignment: .top, spacing: D.s5) {
+                section("Screening", screening)
+                VStack(alignment: .leading, spacing: D.s4) {
+                    section("Reader", reader)
+                    section("Anywhere", app)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Done", action: done).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(D.s5).frame(width: 660)
+    }
+
+    private func section(_ title: String, _ rows: [Row]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionLabel(text: title)
+            ForEach(rows) { row in
+                HStack(alignment: .top, spacing: D.s3) {
+                    HStack(spacing: 2) {
+                        ForEach(Array(row.keys.enumerated()), id: \.offset) { _, k in
+                            Text(k)
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .frame(minWidth: 20)
+                                .padding(.horizontal, 5).padding(.vertical, 3)
+                                .background(Color.secondary.opacity(0.12))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                    }
+                    .frame(width: 108, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(row.what).font(D.body)
+                        if !row.note.isEmpty {
+                            Text(row.note).font(.system(size: 10)).foregroundStyle(.tertiary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(width: 280, alignment: .leading)
     }
 }

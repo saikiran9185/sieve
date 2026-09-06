@@ -10,6 +10,12 @@ struct SieveApp: App {
     @StateObject private var nav = Navigator()
     @StateObject private var enricher = Enricher()
 
+    init() {
+        // The window is built before any view appears, so the saved appearance is applied here
+        // rather than in onAppear, which would flash the wrong theme first.
+        Appearance.apply(Appearance.current)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()
@@ -30,6 +36,11 @@ struct SieveApp: App {
                 Button("Import .bib / .ris…") { nav.requestImportBib = true }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
             }
+            CommandGroup(replacing: .help) {
+                Button("Keyboard Shortcuts") { nav.showShortcuts = true }
+                    .keyboardShortcut("/", modifiers: .command)
+                Button("Sieve on GitHub") { SafeLink.open("https://github.com/saikiran9185/sieve") }
+            }
             CommandMenu("Go") {
                 ForEach(Section.allCases) { s in
                     Button(s.title) { nav.section = s }
@@ -37,6 +48,12 @@ struct SieveApp: App {
                 }
             }
             CommandGroup(after: .toolbar) {
+                Picker("Appearance", selection: Binding(
+                    get: { Appearance.current },
+                    set: { Appearance.current = $0 })) {
+                    ForEach(Appearance.allCases) { Text($0.label).tag($0) }
+                }
+                Divider()
                 Button("Open Library Folder in Finder") {
                     NSWorkspace.shared.open(Library.root)
                 }
@@ -106,6 +123,7 @@ final class Navigator: ObservableObject {
     @Published var section: Section = .dashboard
     @Published var readingPaperId: Int? = nil
     @Published var showNewProject = false
+    @Published var showShortcuts = false
     @Published var requestImportPDF = false
     @Published var requestImportBib = false
     @Published var evidenceFocusId: Int? = nil

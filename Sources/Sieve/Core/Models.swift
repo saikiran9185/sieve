@@ -98,9 +98,18 @@ enum Stance: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
-        case .evidence: return Color(hex: "#4C8DF2")
-        case .interpretation: return Color(hex: "#9B6BE8")
-        case .question: return Color(hex: "#F2C14E")
+        case .evidence: return .readable("#4C8DF2")
+        case .interpretation: return .readable("#9B6BE8")
+        case .question: return .readable("#F2C14E")
+        }
+    }
+
+    /// The literal colour, used for the highlight drawn into the PDF.
+    var rawHex: String {
+        switch self {
+        case .evidence: return "#4C8DF2"
+        case .interpretation: return "#9B6BE8"
+        case .question: return "#F2C14E"
         }
     }
 
@@ -434,7 +443,16 @@ struct Paper: Identifiable, Hashable {
     var conclusionHeading: String = ""   // empty when it is only the closing paragraphs
     var reportCount: Int = 1             // PRISMA counts studies and reports separately
 
-    var hasPDF: Bool { !pdfPath.isEmpty && FileManager.default.fileExists(atPath: pdfPath) }
+    /// Proof that the full text is actually in hand — the file exists, really is a PDF, and
+    /// opens. Cached, because this is asked once per row on every redraw.
+    var pdfProof: PDFVault.Proof { PDFVault.proof(for: pdfPath) }
+
+    /// Retrieved in the PRISMA sense: a readable full text is on disk. A `pdfURL` the record
+    /// never downloaded does not count, and neither does a path whose file has gone.
+    var hasPDF: Bool { pdfProof.retrieved }
+
+    /// The record claims a file but it cannot be read — deleted, moved, or never a PDF.
+    var pdfBroken: Bool { !pdfPath.isEmpty && !pdfProof.retrieved }
 
     var authorLine: String {
         if authors.isEmpty { return "Unknown author" }
@@ -474,7 +492,10 @@ struct Tag: Identifiable, Hashable {
     var sortOrder: Int = 0
     var shortcut: String = ""         // 1–9, pressed in the reader to highlight in this colour
 
-    var color: Color { Color(hex: colorHex) }
+    /// Adaptive so the same tag reads on a white page and a dark one.
+    var color: Color { .readable(colorHex) }
+    /// The literal colour, for the PDF highlight itself and for exports.
+    var rawColor: Color { Color(hex: colorHex) }
     var tagKind: TagKind { TagKind(rawValue: kind) ?? .type }
 }
 
@@ -613,12 +634,12 @@ enum Palette {
 
     static let highlightHexes = [yellowHex, greenHex, blueHex, pinkHex, purpleHex, orangeHex, tealHex, redHex]
 
-    static let emerald = Color(hex: greenHex)
-    static let amber   = Color(hex: yellowHex)
-    static let rose    = Color(hex: redHex)
-    static let violet  = Color(hex: purpleHex)
-    static let slate   = Color(hex: "#8A93A3")
-    static let accent  = Color(hex: blueHex)
+    static let emerald = Color.readable(greenHex)
+    static let amber   = Color.readable(yellowHex)
+    static let rose    = Color.readable(redHex)
+    static let violet  = Color.readable(purpleHex)
+    static let slate   = Color.readable("#8A93A3")
+    static let accent  = Color.readable(blueHex)
 }
 
 extension Color {

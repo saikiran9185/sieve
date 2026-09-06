@@ -251,6 +251,10 @@ final class Store: ObservableObject {
     }
 
     func updatePaper(_ p: Paper) {
+        if let existing = paper(p.id), existing.pdfPath != p.pdfPath {
+            PDFVault.invalidate(existing.pdfPath)
+            PDFVault.invalidate(p.pdfPath)
+        }
         do {
             try db.run("""
                 UPDATE papers SET title=?, authors=?, year=?, venue=?, doi=?, abstract=?, url=?, pdf_url=?,
@@ -279,6 +283,8 @@ final class Store: ObservableObject {
 
     func setPDFPath(_ paperId: Int, _ path: String) {
         do {
+            if let old = paper(paperId)?.pdfPath { PDFVault.invalidate(old) }
+            PDFVault.invalidate(path)
             try db.run("UPDATE papers SET pdf_path=?, accessed_at=? WHERE id=?", [path, Date(), paperId])
             reloadPapers()
         } catch { fail(error, "Attaching PDF") }
@@ -293,6 +299,17 @@ final class Store: ObservableObject {
         guard let p = paper(id) else { return }
         do { try db.run("UPDATE papers SET starred=? WHERE id=?", [!p.starred, id]); reloadPapers() }
         catch { fail(error, "Starring") }
+    }
+
+    /// Moves every record that was sought but never obtained into "not retrieved", so the
+    /// stages match what is actually on disk.
+    @discardableResult
+    func markMissingAsNotRetrieved() -> Int {
+        let targets = missingFullTexts.filter { $0.stage != .included }
+        for p in targets {
+            setStage(p.id, .notRetrieved, reason: "Full text could not be obtained")
+        }
+        return targets.count
     }
 
     /// Flags every record whose dedupe key collides with an earlier one. Runs across the
@@ -799,6 +816,9 @@ final class Store: ObservableObject {
         var assessed = 0
         var excludedEligibility = 0
         var exclusionReasons: [(String, Int)] = []
+        /// Records past screening with no readable full text on disk.
+        var unevidencedFullTexts = 0
+        var includedWithoutFullText = 0
 
         // Other methods (v2 diagrams)
         var otherWebsites = 0
@@ -848,7 +868,17 @@ final class Store: ObservableObject {
         p.screened = max(p.identified - p.removedBeforeScreening, 0)
         p.excludedScreening = papers.filter { $0.stage == .excludedScreening }.count
             + prismaCount(PrismaKey.automationExcluded)
-        p.notRetrieved = papers.filter { $0.stage == .notRetrieved }.count
+        // A report is retrieved only if the full text is genuinely on disk. Records that
+        // passed screening but were never actually obtained belong in "not retrieved",
+        // otherwise the diagram claims full texts that were never read.
+        let markedNotRetrieved = papers.filter { $0.stage == .notRetrieved }
+        let missingFullText = strictRetrieval
+            ? papers.filter {
+                [.sought, .eligibility, .excludedEligibility, .included].contains($0.stage) && !$0.hasPDF
+              }
+            : []
+        p.unevidencedFullTexts = missingFullText.count
+        p.notRetrieved = markedNotRetrieved.count + missingFullText.count
         p.excludedEligibility = papers.filter { $0.stage == .excludedEligibility }.count
 
         let untriaged = papers.filter { $0.stage == .identified || $0.stage == .screening }.count
@@ -874,7 +904,11 @@ final class Store: ObservableObject {
         p.previousStudies = prismaCount(PrismaKey.previousStudies)
         p.previousReports = prismaCount(PrismaKey.previousReports)
 
-        let inc = papers.filter { $0.stage == .included }
+        // Included studies must have a full text behind them for the same reason.
+        let inc = strictRetrieval
+            ? papers.filter { $0.stage == .included && $0.hasPDF }
+            : papers.filter { $0.stage == .included }
+        p.includedWithoutFullText = papers.filter { $0.stage == .included && !$0.hasPDF }.count
         p.includedStudies = inc.count + p.otherIncluded
         // PRISMA counts studies and the reports of them separately: one study can be
         // published across several papers.
@@ -883,6 +917,24 @@ final class Store: ObservableObject {
         p.totalReports = p.includedReports + p.previousReports
         return p
     }
+
+    /// When on, PRISMA treats a readable PDF on disk as the proof that a report was
+    /// retrieved. Off, it trusts the screening decisions alone — useful only if you keep
+    /// full texts outside Sieve.
+    var strictRetrieval: Bool {
+        get { UserDefaults.standard.object(forKey: "sieve.strictRetrieval") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "sieve.strictRetrieval"); objectWillChange.send() }
+    }
+
+    /// Records that claim to be past retrieval but have no readable full text.
+    var missingFullTexts: [Paper] {
+        papers.filter {
+            [.sought, .eligibility, .excludedEligibility, .included].contains($0.stage) && !$0.hasPDF
+        }
+    }
+
+    /// Records whose stored file has gone missing or is not a readable PDF.
+    var brokenPDFs: [Paper] { papers.filter(\.pdfBroken) }
 
     /// The papers behind any number on the flow diagram, so every count is clickable.
     func papers(forPrismaBox box: PrismaBox) -> [Paper] {
@@ -894,10 +946,13 @@ final class Store: ObservableObject {
         case .sought:          return papers.filter {
             [.sought, .notRetrieved, .eligibility, .excludedEligibility, .included].contains($0.stage) }
         case .notRetrieved:    return papers.filter { $0.stage == .notRetrieved }
+            + (strictRetrieval ? missingFullTexts : [])
         case .assessed:        return papers.filter {
-            [.eligibility, .excludedEligibility, .included].contains($0.stage) }
+            [.eligibility, .excludedEligibility, .included].contains($0.stage)
+            && (!strictRetrieval || $0.hasPDF) }
         case .excludedFull:    return papers.filter { $0.stage == .excludedEligibility }
-        case .included:        return papers.filter { $0.stage == .included }
+        case .included:        return papers.filter {
+            $0.stage == .included && (!strictRetrieval || $0.hasPDF) }
         }
     }
 
@@ -943,8 +998,24 @@ final class Store: ObservableObject {
         let noPDF = inc.filter { !$0.hasPDF }
         if !noPDF.isEmpty {
             out.append(.init(id: "nopdf", title: "Included papers with no full text",
-                             detail: "You can't assess what you can't read. Fetch or attach these PDFs.",
-                             count: noPDF.count, severity: .warn, section: "library"))
+                             detail: strictRetrieval
+                                ? "PRISMA is not counting these as included, because there is no PDF on disk to prove the report was retrieved."
+                                : "You can't assess what you can't read. Fetch or attach these PDFs.",
+                             count: noPDF.count, severity: .serious, section: "library"))
+        }
+
+        let unevidenced = missingFullTexts.filter { $0.stage != .included }
+        if !unevidenced.isEmpty {
+            out.append(.init(id: "unevidenced", title: "Full texts sought but never obtained",
+                             detail: "These passed title/abstract screening but no PDF was ever downloaded. PRISMA counts them as “not retrieved”.",
+                             count: unevidenced.count, severity: .warn, section: "library"))
+        }
+
+        let broken = brokenPDFs
+        if !broken.isEmpty {
+            out.append(.init(id: "brokenpdf", title: "Attached files that can't be read",
+                             detail: "The record points at a file that has been moved, deleted, or isn't a readable PDF.",
+                             count: broken.count, severity: .serious, section: "library"))
         }
 
         let unverified = evidence.filter { $0.stance == .evidence && $0.verification == .unchecked }

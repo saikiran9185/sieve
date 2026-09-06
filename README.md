@@ -41,9 +41,12 @@ No account, no server, no subscription.
    abstract, citations — from OpenAlex. Import `.bib` / `.ris` from Zotero, Mendeley or
    Google Scholar. Run duplicate detection. **Fill in missing details** backfills abstracts,
    SDGs and citation lists for anything added before those fields existed.
-4. **Screening** — a list on the left, the record on the right. `I` include, `E` exclude,
-   `←`/`→` move, or use the arrows on either side and along the bottom. Record a
-   **conclusion** and what you still need to read, right beside the abstract. Full-text
+4. **Screening** — a list on the left, the record in the middle, and the decision pinned to
+   a rail on the right that never scrolls away. Every exclusion reason is on screen at once,
+   each on its own number key, so a record is judged and filed without touching the mouse. `F` keeps it, `1`–`9` exclude with that
+   reason, `J`/`K` move — all under the left hand, so a long screening session never moves it.
+   Press `?` for the full list. Record a **conclusion** and what you still need to read,
+   right beside the abstract. Full-text
    exclusions require a reason, because PRISMA demands one. A **Decided** tab holds
    everything you've ruled on — any decision can be taken back.
 5. **Reader** — the PDF, with your tag palette across the top. Select text, press `1`–`9`,
@@ -225,6 +228,25 @@ deduplication, the BibTeX/RIS parsing, the PDF section extraction, the PRISMA co
 every exporter are plain Swift with no Apple dependencies. Swift runs on Windows and Linux,
 so a cross-platform command-line tool or a web front end over that core is a realistic
 project for someone who wants it. Open an issue if that is you.
+
+## Proof, not intention
+
+PRISMA separates reports *sought* from reports *retrieved*, and Sieve treats that as a fact
+about the disk rather than a state of mind. A record counts as retrieved only when a readable
+PDF is actually there — verified by opening it, not by trusting a stored path. Records that
+passed screening but were never downloaded are counted under "reports not retrieved", and the
+diagram says so rather than quietly inflating the number of papers you assessed. One button
+moves them all to the right stage.
+
+The same check catches files that have been deleted, moved, or saved as a publisher's error
+page under a `.pdf` name.
+
+## Light and dark
+
+Both, or whatever the system is set to — in Settings, or the View menu. The tag palette is
+authored for a dark ground, so the light variant of each colour is derived rather than
+maintained separately: measured against white, amber reached only 1.7:1 as authored and 4.65:1
+after. All nine tag colours clear WCAG 4.5:1 in both modes.
 
 ## Privacy and security
 

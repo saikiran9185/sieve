@@ -68,9 +68,10 @@ struct Chip: View {
             Text(text).font(D.small.weight(.medium)).lineLimit(1)
         }
         .padding(.horizontal, 7).padding(.vertical, 3)
-        .background(filled ? color.opacity(0.9) : color.opacity(0.14))
-        .foregroundStyle(filled ? Color.white : color.opacity(0.999))
+        .background(filled ? color.opacity(0.92) : color.opacity(0.16))
+        .foregroundStyle(filled ? Color.white : color)
         .clipShape(Capsule())
+        .accessibilityLabel(text)
     }
 }
 

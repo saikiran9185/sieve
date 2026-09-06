@@ -204,6 +204,7 @@ struct ReaderScreen: View {
     @State private var showThought = false
     @AppStorage("sieve.readerRailWidth") private var railWidth: Double = 250
     @AppStorage("sieve.readerInspectorWidth") private var inspectorWidth: Double = 340
+    @State private var showShortcuts = false
 
     /// The reader's own view of the library. "Included" is the default because the point
     /// of this screen is the papers that made it into the review.
@@ -230,6 +231,7 @@ struct ReaderScreen: View {
         .background(D.canvas)
         .onAppear { installKeyMonitor() }
         .onDisappear { if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil } }
+        .sheet(isPresented: $showShortcuts) { ShortcutSheet { showShortcuts = false } }
         .onChange(of: store.tags.count) { _, _ in ensureActiveTag() }
         .onAppear { ensureActiveTag() }
     }
@@ -453,6 +455,14 @@ struct ReaderScreen: View {
                 }
                 Text(stance.blurb).font(.system(size: 10)).foregroundStyle(.tertiary)
                 Spacer()
+                Button { showShortcuts = true } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "keyboard").font(.system(size: 9))
+                        Text("? keys").font(.system(size: 10))
+                    }
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .help("Keyboard shortcuts")
                 Button { showThought = true } label: {
                     Label("Add a thought", systemImage: "plus.bubble")
                         .font(D.small)
@@ -537,15 +547,44 @@ struct ReaderScreen: View {
     }
 
     /// Number keys 1–9 pick a colour and highlight in one keystroke — the thing you do
-    /// hundreds of times per paper has to cost one key, not a menu.
+    /// hundreds of times per paper has to cost one key, not a menu. The rest keep the whole
+    /// reading loop on the left hand, so the right can stay on the trackpad selecting text.
+    ///
+    ///   1–9  highlight the selection in that colour
+    ///   [ ]  previous / next paper       E I Q  switch what you are recording
+    ///   ?    the shortcut list
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard nav.section == .reader,
-                  !event.modifierFlags.contains(.command),
-                  let chars = event.charactersIgnoringModifiers, chars.count == 1,
-                  let digit = Int(chars), (1...9).contains(digit) else { return event }
-            // Only steal the key when there's actually a selection to act on.
+            guard nav.section == .reader, !event.modifierFlags.contains(.command) else { return event }
+            // A note or a search field must always win the keystroke.
+            if NSApp.keyWindow?.firstResponder is NSTextView { return event }
+            guard let chars = event.charactersIgnoringModifiers, !chars.isEmpty else { return event }
+
+            if chars == "?" { showShortcuts.toggle(); return nil }
+
+            // Move through the reading list without leaving the keyboard.
+            if chars == "[" || chars == "]" {
+                let list = readable
+                guard let here = list.firstIndex(where: { $0.id == paper?.id }) else { return nil }
+                let next = chars == "]" ? here + 1 : here - 1
+                if list.indices.contains(next) {
+                    nav.readingPaperId = list[next].id
+                    controller.clearSelection()
+                }
+                return nil
+            }
+
+            // Switch what the next highlight records, without reaching for the mouse.
+            switch chars.lowercased() {
+            case "e": stance = .evidence; return nil
+            case "i": stance = .interpretation; return nil
+            case "q": stance = .question; return nil
+            default: break
+            }
+
+            guard chars.count == 1, let digit = Int(chars), (1...9).contains(digit) else { return event }
+            // Only steal a digit when there is actually a selection to act on.
             guard controller.selectionGeometry() != nil else { return event }
             if let tag = store.categoryTags.first(where: { $0.shortcut == String(digit) }) {
                 highlight(with: tag)

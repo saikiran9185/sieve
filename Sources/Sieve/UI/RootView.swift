@@ -96,6 +96,7 @@ struct RootView: View {
         case .evidence:  EvidenceView()
         case .map:       MapView()
         case .matrix:    MatrixView()
+        case .frames:    FramesView()
         case .prisma:    PrismaView()
         case .aiTrail:   AITrailView()
         case .method:    MethodView()

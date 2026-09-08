@@ -425,6 +425,78 @@ enum Exporters {
         return svg
     }
 
+    // MARK: Frameworks
+
+    static func frameGrid(_ store: Store, _ frame: Frame) -> [[String]] {
+        let rows = store.rows(of: frame.id), cols = store.cols(of: frame.id)
+        var grid: [[String]] = [[frame.template?.rowNoun.capitalized ?? "Row"] + cols.map(\.name)]
+        for row in rows {
+            var line = [row.name]
+            for col in cols {
+                let cell = store.frameCell(frame.id, row.id, col.id)
+                var text = cell.value
+                // The citation travels with the claim; a SWOT quadrant pasted into a slide
+                // without its sources is how a guess becomes a finding.
+                if !cell.evidenceIds.isEmpty {
+                    let cites = cell.evidenceIds.compactMap { id -> String? in
+                        guard let e = store.evidence(id), let p = store.paper(e.paperId) else { return nil }
+                        return e.page >= 0 ? "\(p.citeKey) p.\(e.page + 1)" : p.citeKey
+                    }
+                    if !cites.isEmpty { text += "  [\(cites.joined(separator: "; "))]" }
+                }
+                line.append(text)
+            }
+            grid.append(line)
+        }
+        return grid
+    }
+
+    /// The Markdown body without the save panel, so it can be checked in a test.
+    static func frameMarkdownPreview(_ store: Store, _ frame: Frame) -> String {
+        let grid = frameGrid(store, frame)
+        guard let header = grid.first else { return "" }
+        var out = "# \(frame.name)\n\n"
+        out += "| " + header.joined(separator: " | ") + " |\n"
+        out += "|" + header.map { _ in " --- " }.joined(separator: "|") + "|\n"
+        for row in grid.dropFirst() where row.dropFirst().contains(where: { !$0.isEmpty }) {
+            out += "| " + row.joined(separator: " | ") + " |\n"
+        }
+        return out
+    }
+
+    static func exportFrameCSV(_ store: Store, _ frame: Frame) {
+        save(text: csvText(frameGrid(store, frame)),
+             suggested: "\(frame.name).csv", store: store)
+    }
+
+    static func exportFrameMarkdown(_ store: Store, _ frame: Frame) {
+        let grid = frameGrid(store, frame)
+        guard let header = grid.first else { return }
+        var out = "# \(frame.name)\n\n"
+        if !frame.detail.isEmpty { out += "_\(frame.detail)_\n\n" }
+        let g = store.frameGrounding(frame.id)
+        out += "\(g.filled) of \(g.total) cells filled · \(g.cited) cite evidence\n\n"
+        out += "| " + header.joined(separator: " | ") + " |\n"
+        out += "|" + header.map { _ in " --- " }.joined(separator: "|") + "|\n"
+        for row in grid.dropFirst() {
+            out += "| " + row.map { $0.replacingOccurrences(of: "|", with: "\\|")
+                                     .replacingOccurrences(of: "\n", with: " ") }
+                .joined(separator: " | ") + " |\n"
+        }
+        out += "\n## Sources cited\n\n"
+        var seen = Set<Int>()
+        for row in store.rows(of: frame.id) {
+            for col in store.cols(of: frame.id) {
+                for id in store.frameCell(frame.id, row.id, col.id).evidenceIds {
+                    guard let e = store.evidence(id), let p = store.paper(e.paperId),
+                          seen.insert(p.id).inserted else { continue }
+                    out += "- \(p.reference)\n"
+                }
+            }
+        }
+        save(text: out, suggested: "\(frame.name).md", store: store)
+    }
+
     // MARK: AI use
 
     /// The declaration journals now ask for, written from the trail rather than from memory.

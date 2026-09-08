@@ -13,6 +13,9 @@ final class Store: ObservableObject {
     @Published var relations: [Relation] = []
     @Published var membership: [Int: Set<Int>] = [:]
     @Published var aiEvents: [AIEvent] = []
+    @Published var frames: [Frame] = []
+    @Published var frameAxes: [Int: [FrameAxis]] = [:]      // frame id → its rows and columns
+    @Published var frameCells: [String: FrameCell] = [:]    // "frame-row-col"
     @Published var methods: [Method] = []
     @Published var prismaCounts: [String: Int] = [:]
     @Published var checklist: [String: (state: String, location: String)] = [:]
@@ -175,7 +178,7 @@ final class Store: ObservableObject {
     func reloadAll() {
         reloadTags(); reloadFolders(); reloadPapers(); reloadColumns(); reloadEvidence()
         reloadCells(); reloadRelations(); reloadMethods(); reloadPrismaCounts(); reloadChecklist()
-        reloadMembership(); reloadAIEvents()
+        reloadMembership(); reloadAIEvents(); reloadFrames()
     }
 
     // MARK: - Papers
@@ -303,6 +306,42 @@ final class Store: ObservableObject {
             reloadPapers()
             return Int(id)
         } catch { fail(error, "Adding paper"); return nil }
+    }
+
+    /// Creates a source that did not come from a database — an interview, a usability
+    /// session, a field note, a competitor's website. UX research is mostly these, and until
+    /// now the only way in was a literature search or a dropped PDF.
+    @discardableResult
+    func addSource(type: SourceType, title: String, participants: [String] = [],
+                   date: Date? = nil, venue: String = "", url: String = "",
+                   notes: String = "", stage: Stage = .included) -> Int? {
+        let clean = title.trimmingCharacters(in: .whitespaces)
+        guard !clean.isEmpty else { return nil }
+        // Own material is identified by title and date; it has no DOI to key on.
+        let stamp = (date ?? Date()).formatted(.iso8601.year().month().day())
+        let key = "own:" + type.rawValue + ":"
+            + clean.lowercased().filter { $0.isLetter || $0.isNumber }.prefix(60) + ":" + stamp
+        do {
+            if let existing = try db.query("SELECT id FROM papers WHERE project_id=? AND dedupe_key=?",
+                                           [currentProjectId, key]).first {
+                return existing.int("id")
+            }
+            let id = try db.run("""
+                INSERT INTO papers (project_id, title, authors, year, venue, url, source_db,
+                                    added_at, stage, dedupe_key, source_type, notes, pub_date, doc_type)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, [currentProjectId, clean, participants.joined(separator: "\n"),
+                      Calendar.current.component(.year, from: date ?? Date()), venue, url,
+                      "Collected by me", Date(), stage.rawValue, key, type.rawValue, notes,
+                      stamp, type.label])
+            reloadPapers()
+            return Int(id)
+        } catch { fail(error, "Adding the source"); return nil }
+    }
+
+    /// Sources you produced rather than found. These are what a UX study is made of.
+    var ownSources: [Paper] {
+        papers.filter { $0.sourceDB == "Collected by me" }
     }
 
     func updatePaper(_ p: Paper) {
@@ -670,6 +709,155 @@ final class Store: ObservableObject {
             guard n.count == 4 else { return nil }
             return CGRect(x: n[0], y: n[1], width: n[2], height: n[3])
         }
+    }
+
+    // MARK: - Frames
+
+    func reloadFrames() {
+        do {
+            frames = try db.query("SELECT * FROM frames WHERE project_id=? ORDER BY sort_order, created_at",
+                                  [currentProjectId]).map {
+                Frame(id: $0.int("id") ?? 0, projectId: $0.int("project_id") ?? 0,
+                      name: $0.string("name") ?? "", kind: $0.string("kind") ?? "custom",
+                      detail: $0.string("detail") ?? "", sortOrder: $0.int("sort_order") ?? 0,
+                      createdAt: $0.date("created_at") ?? Date())
+            }
+            var axes: [Int: [FrameAxis]] = [:]
+            for r in try db.query("""
+                SELECT a.* FROM frame_axes a JOIN frames f ON f.id = a.frame_id
+                WHERE f.project_id=? ORDER BY a.sort_order
+                """, [currentProjectId]) {
+                let fid = r.int("frame_id") ?? 0
+                axes[fid, default: []].append(FrameAxis(
+                    id: r.int("id") ?? 0, frameId: fid,
+                    isRow: (r.string("axis") ?? "row") == "row",
+                    name: r.string("name") ?? "", detail: r.string("detail") ?? "",
+                    sortOrder: r.int("sort_order") ?? 0, colorHex: r.string("color") ?? "",
+                    sourceId: r.int("source_id")))
+            }
+            frameAxes = axes
+            var cells: [String: FrameCell] = [:]
+            for r in try db.query("""
+                SELECT c.* FROM frame_cells c JOIN frames f ON f.id = c.frame_id WHERE f.project_id=?
+                """, [currentProjectId]) {
+                let fid = r.int("frame_id") ?? 0, row = r.int("row_id") ?? 0, col = r.int("col_id") ?? 0
+                cells["\(fid)-\(row)-\(col)"] = FrameCell(
+                    rowId: row, colId: col, value: r.string("value") ?? "",
+                    evidenceIds: (r.string("evidence_ids") ?? "").split(separator: ",").compactMap { Int($0) },
+                    aiGenerated: r.bool("ai_generated"))
+            }
+            frameCells = cells
+        } catch { fail(error, "Loading frameworks") }
+    }
+
+    func rows(of frameId: Int) -> [FrameAxis] {
+        (frameAxes[frameId] ?? []).filter(\.isRow).sorted { $0.sortOrder < $1.sortOrder }
+    }
+    func cols(of frameId: Int) -> [FrameAxis] {
+        (frameAxes[frameId] ?? []).filter { !$0.isRow }.sorted { $0.sortOrder < $1.sortOrder }
+    }
+    func frameCell(_ frameId: Int, _ row: Int, _ col: Int) -> FrameCell {
+        frameCells["\(frameId)-\(row)-\(col)"] ?? FrameCell(rowId: row, colId: col)
+    }
+
+    /// Creates a framework from a template, or empty when the method has open rows.
+    @discardableResult
+    func addFrame(_ template: FrameTemplate, name: String? = nil) -> Int {
+        do {
+            let order = (frames.map(\.sortOrder).max() ?? -1) + 1
+            let id = Int(try db.run("""
+                INSERT INTO frames (project_id, name, kind, detail, sort_order, created_at)
+                VALUES (?,?,?,?,?,?)
+                """, [currentProjectId, name ?? template.label, template.rawValue,
+                      template.blurb, order, Date()]))
+            let start = template.starting
+            for (i, r) in start.rows.enumerated() { addAxis(id, isRow: true, name: r.0, detail: r.1, order: i) }
+            for (i, c) in start.cols.enumerated() { addAxis(id, isRow: false, name: c.0, detail: c.1, order: i) }
+            reloadFrames()
+            return id
+        } catch { fail(error, "Creating the framework"); return 0 }
+    }
+
+    @discardableResult
+    func addAxis(_ frameId: Int, isRow: Bool, name: String, detail: String = "",
+                 order: Int? = nil, sourceId: Int? = nil, color: String = "") -> Int {
+        do {
+            let existing = isRow ? rows(of: frameId) : cols(of: frameId)
+            let sort = order ?? ((existing.map(\.sortOrder).max() ?? -1) + 1)
+            let id = try db.run("""
+                INSERT INTO frame_axes (frame_id, axis, name, detail, sort_order, color, source_id)
+                VALUES (?,?,?,?,?,?,?)
+                """, [frameId, isRow ? "row" : "col", name, detail, sort, color, sourceId])
+            if order == nil { reloadFrames() }
+            return Int(id)
+        } catch { fail(error, "Adding to the framework"); return 0 }
+    }
+
+    func updateAxis(_ a: FrameAxis) {
+        do {
+            try db.run("UPDATE frame_axes SET name=?, detail=?, sort_order=?, color=?, source_id=? WHERE id=?",
+                       [a.name, a.detail, a.sortOrder, a.colorHex, a.sourceId, a.id])
+            reloadFrames()
+        } catch { fail(error, "Saving") }
+    }
+
+    func deleteAxis(_ id: Int) {
+        do { try db.run("DELETE FROM frame_axes WHERE id=?", [id]); reloadFrames() }
+        catch { fail(error, "Removing") }
+    }
+
+    func moveAxis(_ id: Int, _ frameId: Int, isRow: Bool, up: Bool) {
+        let list = isRow ? rows(of: frameId) : cols(of: frameId)
+        guard let i = list.firstIndex(where: { $0.id == id }) else { return }
+        let j = up ? i - 1 : i + 1
+        guard list.indices.contains(j) else { return }
+        var a = list[i], b = list[j]
+        swap(&a.sortOrder, &b.sortOrder)
+        updateAxis(a); updateAxis(b)
+    }
+
+    func setFrameCell(_ frameId: Int, _ row: Int, _ col: Int, value: String,
+                      evidenceIds: [Int]? = nil, ai: Bool = false) {
+        let existing = frameCell(frameId, row, col)
+        let eids = evidenceIds ?? existing.evidenceIds
+        do {
+            try db.run("""
+                INSERT INTO frame_cells (frame_id, row_id, col_id, value, evidence_ids, ai_generated)
+                VALUES (?,?,?,?,?,?)
+                ON CONFLICT(frame_id, row_id, col_id) DO UPDATE SET value=excluded.value,
+                    evidence_ids=excluded.evidence_ids, ai_generated=excluded.ai_generated
+                """, [frameId, row, col, value, eids.map(String.init).joined(separator: ","), ai])
+            frameCells["\(frameId)-\(row)-\(col)"] = FrameCell(rowId: row, colId: col, value: value,
+                                                                evidenceIds: eids, aiGenerated: ai)
+        } catch { fail(error, "Saving the cell") }
+    }
+
+    func updateFrame(_ f: Frame) {
+        do {
+            try db.run("UPDATE frames SET name=?, detail=?, sort_order=? WHERE id=?",
+                       [f.name, f.detail, f.sortOrder, f.id])
+            reloadFrames()
+        } catch { fail(error, "Saving the framework") }
+    }
+
+    func deleteFrame(_ id: Int) {
+        do { try db.run("DELETE FROM frames WHERE id=?", [id]); reloadFrames() }
+        catch { fail(error, "Deleting the framework") }
+    }
+
+    /// How much of a framework rests on cited evidence rather than assertion. The number a
+    /// SWOT usually cannot answer.
+    func frameGrounding(_ frameId: Int) -> (filled: Int, cited: Int, total: Int) {
+        let r = rows(of: frameId), c = cols(of: frameId)
+        var filled = 0, cited = 0
+        for row in r {
+            for col in c {
+                let cell = frameCell(frameId, row.id, col.id)
+                if !cell.value.isEmpty { filled += 1 }
+                if !cell.evidenceIds.isEmpty { cited += 1 }
+            }
+        }
+        return (filled, cited, r.count * c.count)
     }
 
     // MARK: - AI audit trail

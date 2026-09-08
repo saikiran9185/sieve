@@ -305,6 +305,33 @@ Paths are stored **relative to the library root**, so you can move the whole lib
 external drive or a synced folder — Settings → Library → Move — without breaking a single
 record.
 
+## Design research, in the same project
+
+A source does not have to be a paper. **Library → Add → New source I collected** makes an
+interview, a usability session, a field note, a competitor teardown, a video or a dataset.
+It behaves exactly like a paper: you highlight it, the highlights carry provenance, and they
+can be cited anywhere.
+
+**Frameworks** are grids whose cells cite that evidence — SWOT, user journey, empathy map,
+competitive analysis, assumptions and risks, research plan, affinity themes, a prioritisation
+2×2, or a blank grid. Some come with their rows fixed by the method; the rest you fill with
+your own participants, competitors or assumptions.
+
+The difference from a whiteboard is one column and one number. A SWOT on a whiteboard is four
+boxes of assertion. Here each quadrant has a column asking **what it rests on**, that column
+links to the actual highlight in the actual source, and the header counts how many filled
+cells are cited:
+
+> 3 cells filled · **2 cite evidence**
+
+A cell with a claim and no citation is marked **no evidence** in the grid. Exports carry the
+citations inline — `[p3-2026 p.1; p7-2026 p.1]` — plus a reference list, so a quadrant pasted
+into a slide keeps its sources.
+
+Because a framework is a *view over the same evidence*, one interview quote can appear in an
+empathy map, a SWOT and the literature matrix at once, and in all three it still resolves to
+the same source, participant and date.
+
 ## Where the AI gets checked
 
 A model can read faster than you and will not show its working. Sieve does not try to beat it

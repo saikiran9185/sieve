@@ -24,6 +24,7 @@ struct LibraryView: View {
     @State private var newFolderName = ""
     @State private var showFilters = false
     @AppStorage("sieve.libraryFolderWidth") private var folderWidth: Double = 220
+    @State private var showNewSource = false
 
     private var rows: [Paper] {
         let scope: [Paper]
@@ -85,6 +86,7 @@ struct LibraryView: View {
             // Cheap — it only writes symlinks — so keeping it current costs nothing.
             if FinderMirror.autoRefresh { FinderMirror.rebuild(store) }
         }
+        .sheet(isPresented: $showNewSource) { NewSourceSheet { showNewSource = false } }
     }
 
     private var toolbar: some View {
@@ -143,7 +145,13 @@ struct LibraryView: View {
                 Button("Choose what the folders group by…") { nav.section = .settings }
             } label: { Label("Finder", systemImage: "folder") }
                 .frame(width: 96)
-            Button { nav.requestImportPDF = true } label: { Label("Add PDFs", systemImage: "plus") }
+            Menu {
+                Button("Import PDFs…") { nav.requestImportPDF = true }
+                Button("Import .bib / .ris…") { nav.requestImportBib = true }
+                Divider()
+                Button("New source I collected…") { showNewSource = true }
+            } label: { Label("Add", systemImage: "plus") }
+                .frame(width: 84)
             Menu {
                 Button("Export everything (one folder)…") { Exporters.exportEverything(store) }
                 Divider()
@@ -745,5 +753,102 @@ struct PaperRow: View {
         .onHover { hovering = $0 }
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { nav.read(paper.id) }
+    }
+}
+
+/// Creating a source you produced rather than found — an interview, a usability session, a
+/// field note, a competitor's site. UX research is mostly these, and until now the only ways
+/// into the library were a database search or a dropped PDF.
+struct NewSourceSheet: View {
+    var done: () -> Void
+    @EnvironmentObject var store: Store
+    @EnvironmentObject var nav: Navigator
+    @State private var type: SourceType = .interview
+    @State private var title = ""
+    @State private var participants = ""
+    @State private var date = Date()
+    @State private var venue = ""
+    @State private var url = ""
+    @State private var notes = ""
+
+    private static let kinds: [SourceType] = [.interview, .video, .image, .website, .dataset, .report, .other]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: D.s4) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("New source").font(D.title)
+                Text("Something you collected. It behaves exactly like a paper: you highlight it, the highlights carry provenance, and they can be cited in the matrix and in any framework.")
+                    .font(D.small).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 5) {
+                ForEach(Self.kinds) { k in
+                    Button { type = k } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: k.icon).font(.system(size: 14))
+                            Text(k.label).font(.system(size: 10))
+                        }
+                        .frame(width: 74, height: 48)
+                        .background(type == k ? Palette.accent.opacity(0.14) : Color.secondary.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .overlay(RoundedRectangle(cornerRadius: 7)
+                            .stroke(type == k ? Palette.accent : .clear, lineWidth: 1.2))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            field("Title", type == .interview ? "e.g. Interview — P3, packaging designer"
+                                              : "What this source is", $title)
+            if type == .interview || type == .video {
+                field("Participants", "P3 · one per line, or comma separated", $participants)
+            }
+            HStack(alignment: .top, spacing: D.s3) {
+                VStack(alignment: .leading, spacing: 3) {
+                    SectionLabel(text: "When")
+                    DatePicker("", selection: $date, displayedComponents: .date).labelsHidden()
+                }
+                field(type == .website ? "Site" : "Where", "Studio, remote, city…", $venue)
+            }
+            if type == .website || type == .video { field("Link", "https://…", $url) }
+
+            VStack(alignment: .leading, spacing: 3) {
+                SectionLabel(text: "Notes")
+                TextEditor(text: $notes)
+                    .font(D.body).frame(height: 70).padding(4)
+                    .background(D.surface).clipShape(RoundedRectangle(cornerRadius: D.radius))
+                    .hairlineBorder()
+            }
+
+            Text("Drop a transcript PDF onto the window afterwards to attach it, and you can highlight it like any other document.")
+                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: done).keyboardShortcut(.cancelAction)
+                Button("Add source") {
+                    let people = participants
+                        .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+                        .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    if let id = store.addSource(type: type, title: title, participants: people,
+                                                date: date, venue: venue, url: url, notes: notes) {
+                        store.flash("Added — highlight it in the Reader to make it citable")
+                        nav.readingPaperId = id
+                    }
+                    done()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(D.s5).frame(width: 560)
+    }
+
+    private func field(_ label: String, _ placeholder: String, _ text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            SectionLabel(text: label)
+            TextField(placeholder, text: text).textFieldStyle(.roundedBorder)
+        }
     }
 }

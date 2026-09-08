@@ -63,7 +63,7 @@ struct SieveApp: App {
 }
 
 enum Section: String, CaseIterable, Identifiable {
-    case dashboard, search, library, screening, reader, evidence, map, matrix, prisma, aiTrail, method, tags, settings
+    case dashboard, search, library, screening, reader, evidence, map, matrix, frames, prisma, aiTrail, method, tags, settings
     var id: String { rawValue }
 
     var title: String {
@@ -76,6 +76,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .evidence: return "Evidence"
         case .map: return "Map"
         case .matrix: return "Matrix"
+        case .frames: return "Frameworks"
         case .prisma: return "PRISMA"
         case .aiTrail: return "AI trail"
         case .method: return "Method"
@@ -94,6 +95,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .evidence: return "highlighter"
         case .map: return "point.3.connected.trianglepath.dotted"
         case .matrix: return "tablecells"
+        case .frames: return "square.grid.3x3"
         case .prisma: return "flowchart"
         case .aiTrail: return "shield.lefthalf.filled"
         case .method: return "slider.horizontal.3"
@@ -113,6 +115,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .map: return "7"
         case .matrix: return "8"
         case .prisma: return "9"
+        case .frames: return "f"
         case .aiTrail: return "t"
         case .method: return "m"
         case .tags: return "0"

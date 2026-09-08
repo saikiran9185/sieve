@@ -114,6 +114,46 @@ enum Schema {
             PRIMARY KEY (paper_id, column_id)
         );
 
+        -- A framework — SWOT, a journey map, an empathy map — is a grid whose cells cite
+        -- evidence. It is a *view over the same evidence*, not a new kind of data, which is
+        -- why a quote from an interview can appear in a journey map and in the literature
+        -- matrix at once and still point back to the same source and timestamp.
+        --
+        -- The literature matrix keeps its own tables because its rows are always papers.
+        -- A frame's rows are whatever the method needs: journey stages, SWOT quadrants,
+        -- competitors, assumptions.
+        CREATE TABLE IF NOT EXISTS frames (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'custom',
+            detail TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at REAL NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS frame_axes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            frame_id INTEGER NOT NULL REFERENCES frames(id) ON DELETE CASCADE,
+            axis TEXT NOT NULL,
+            name TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT '',
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            color TEXT NOT NULL DEFAULT '',
+            source_id INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_axes_frame ON frame_axes(frame_id, axis);
+
+        CREATE TABLE IF NOT EXISTS frame_cells (
+            frame_id INTEGER NOT NULL REFERENCES frames(id) ON DELETE CASCADE,
+            row_id INTEGER NOT NULL,
+            col_id INTEGER NOT NULL,
+            value TEXT NOT NULL DEFAULT '',
+            evidence_ids TEXT NOT NULL DEFAULT '',
+            ai_generated INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (frame_id, row_id, col_id)
+        );
+
         CREATE TABLE IF NOT EXISTS relations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

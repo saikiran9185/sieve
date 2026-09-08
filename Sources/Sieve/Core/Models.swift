@@ -532,10 +532,23 @@ struct Paper: Identifiable, Hashable {
     }
 
     var citeKey: String {
-        let last = (authors.first ?? "anon")
-            .split(separator: " ").last.map(String.init) ?? "anon"
+        let stamp = year.map(String.init) ?? "nd"
+        // A paper is cited by its author's surname. Material you collected yourself is not:
+        // participants are called P3 and P7, and stripping the digit collapses both to "p".
+        if sourceType != .paper {
+            if let who = authors.first, !who.isEmpty {
+                let token = who.replacingOccurrences(of: "[^A-Za-z0-9]", with: "",
+                                                     options: .regularExpression)
+                if !token.isEmpty { return "\(token.lowercased())-\(stamp)" }
+            }
+            let slug = title.lowercased()
+                .replacingOccurrences(of: "[^a-z0-9 ]", with: "", options: .regularExpression)
+                .split(separator: " ").prefix(2).joined(separator: "-")
+            return slug.isEmpty ? "source-\(id)" : "\(slug)-\(stamp)"
+        }
+        let last = (authors.first ?? "anon").split(separator: " ").last.map(String.init) ?? "anon"
         let clean = last.lowercased().filter { $0.isLetter }
-        return "\(clean.isEmpty ? "anon" : clean)\(year.map(String.init) ?? "nd")"
+        return "\(clean.isEmpty ? "anon" : clean)\(stamp)"
     }
 
     /// APA-ish reference line used in exports and evidence cards.

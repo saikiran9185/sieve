@@ -314,6 +314,7 @@ struct SettingsView: View {
     @State private var engineRefresh = 0
     @State private var appearanceTick = 0
     @State private var libraryTick = 0
+    @State private var mirrorTick = 0
 
     /// Moves the whole library. Paths are relative to the root, so nothing inside changes.
     private func relocate() {
@@ -447,6 +448,71 @@ struct SettingsView: View {
                     }
                 }
 
+                group("Folders you can browse in Finder") {
+                    Text("Sieve can mirror the review into real folders — by decision, by collection, by year — using symbolic links. The same paper appears everywhere it belongs and still takes up space once. Delete the folder any time; nothing is lost.")
+                        .font(D.small).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    ForEach(FinderMirror.Grouping.allCases) { g in
+                        Toggle(isOn: Binding(
+                            get: { FinderMirror.enabledGroupings.contains(g) },
+                            set: { on in
+                                var set = FinderMirror.enabledGroupings
+                                if on { set.insert(g) } else { set.remove(g) }
+                                FinderMirror.enabledGroupings = set
+                                mirrorTick += 1
+                            })) {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(g.label).font(D.body)
+                                Text(g.blurb).font(D.small).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+
+                    Toggle(isOn: Binding(
+                        get: { FinderMirror.autoRefresh },
+                        set: { FinderMirror.autoRefresh = $0; mirrorTick += 1 })) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("Keep it up to date").font(D.body)
+                            Text("Rebuild whenever you open the Library, so the folders follow your decisions.")
+                                .font(D.small).foregroundStyle(.secondary)
+                        }
+                    }
+
+                    HStack {
+                        Button("Build the folders now") {
+                            let r = FinderMirror.rebuild(store)
+                            mirrorTick += 1
+                            store.flash(r.links == 0
+                                ? "Nothing to mirror yet — no PDFs in this review"
+                                : "\(r.links) links across \(r.folders) folders, 0 bytes used")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(FinderMirror.enabledGroupings.isEmpty)
+
+                        Button("Open in Finder") {
+                            guard let p = store.project else { return }
+                            NSWorkspace.shared.open(Library.reviewDir(id: p.id, name: p.name))
+                        }
+                        Spacer()
+                    }
+                    .id(mirrorTick)
+                }
+
+                group("File names") {
+                    Text("Files are named year-author-title. An earlier build stripped titles to plain letters, which turned a Cyrillic or Greek title into a row of underscores; those are transliterated now.")
+                        .font(D.small).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        Button("Rename this review's files to match") {
+                            let n = FinderMirror.renameFiles(store)
+                            store.flash(n == 0 ? "Every file is already named that way"
+                                               : "Renamed \(n) files")
+                        }
+                        Spacer()
+                    }
+                }
+
                 group("Databases") {
                     Text("Sieve queries these in parallel. The first nine are free and need no account; the rest issue a free key that unlocks them.")
                         .font(D.small).foregroundStyle(.secondary)
@@ -547,9 +613,9 @@ struct SettingsView: View {
                     }
                     labelled("How it is arranged") {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Reviews/<review name>/PDFs/ — one folder per review")
+                            Text("Reviews/<review>/PDFs/ — one file per paper, one folder per review")
                                 .font(D.mono)
-                            Text("Collections inside a review are labels, not folders. Filing a paper never moves a file, so the same paper can sit in several collections at once.")
+                            Text("Collections are labels, not locations, so the papers themselves stay flat — a paper in three collections is still one file.")
                                 .font(.system(size: 10.5)).foregroundStyle(.tertiary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

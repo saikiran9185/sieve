@@ -81,6 +81,10 @@ struct LibraryView: View {
             }
         }
         .background(D.canvas)
+        .onAppear {
+            // Cheap — it only writes symlinks — so keeping it current costs nothing.
+            if FinderMirror.autoRefresh { FinderMirror.rebuild(store) }
+        }
     }
 
     private var toolbar: some View {
@@ -124,6 +128,21 @@ struct LibraryView: View {
             .disabled(enricher.running || rows.isEmpty)
             .help("Look up abstracts, SDGs, citation lists and dates for the papers in this list. Only empty fields are filled.")
 
+            Menu {
+                Button("Open this review's folder") {
+                    guard let p = store.project else { return }
+                    NSWorkspace.shared.open(Library.reviewDir(id: p.id, name: p.name))
+                }
+                Button("Rebuild the browsable folders") {
+                    let r = FinderMirror.rebuild(store)
+                    store.flash("\(r.links) links across \(r.folders) folders")
+                    guard let p = store.project else { return }
+                    NSWorkspace.shared.open(FinderMirror.browseDir(id: p.id, name: p.name))
+                }
+                Divider()
+                Button("Choose what the folders group by…") { nav.section = .settings }
+            } label: { Label("Finder", systemImage: "folder") }
+                .frame(width: 96)
             Button { nav.requestImportPDF = true } label: { Label("Add PDFs", systemImage: "plus") }
             Menu {
                 Button("Export everything (one folder)…") { Exporters.exportEverything(store) }

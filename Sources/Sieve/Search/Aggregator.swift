@@ -235,11 +235,6 @@ final class Downloader: ObservableObject {
         }
     }
 
-    static func filename(for p: Paper) -> String {
-        let safe = p.citeKey + "-" + p.title.prefix(50)
-            .replacingOccurrences(of: "[^A-Za-z0-9 ]", with: "", options: .regularExpression)
-            .replacingOccurrences(of: " ", with: "_")
-        return safe + "-\(p.id).pdf"
-    }
+    static func filename(for p: Paper) -> String { PDFNaming.filename(for: p) }
 }
 

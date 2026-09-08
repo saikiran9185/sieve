@@ -131,10 +131,33 @@ final class Store: ObservableObject {
     }
 
     func updateProject(_ p: Project) {
+        let oldName = projects.first { $0.id == p.id }?.name
         do {
             try db.run("UPDATE projects SET name=?, question=?, inclusion=?, exclusion=? WHERE id=?",
                        [p.name, p.question, p.inclusionCriteria, p.exclusionCriteria, p.id])
             reloadProjects()
+            // The folder is named after the review, so renaming one renames the other.
+            // Paths are stored relative to the library root, so nothing has to be rewritten.
+            if let oldName, oldName != p.name {
+                let from = Library.reviewDir(id: p.id, name: oldName)
+                let to = Library.reviewDir(id: p.id, name: p.name)
+                if from.path != to.path, FileManager.default.fileExists(atPath: from.path) {
+                    do {
+                        try FileManager.default.moveItem(at: from, to: to)
+                        // Stored paths are relative and contain the folder name, so they have
+                        // to follow it. Without this every PDF in the review would be lost
+                        // the moment it was renamed.
+                        let oldPrefix = Library.relative(from.path) + "/"
+                        let newPrefix = Library.relative(to.path) + "/"
+                        try db.run("""
+                            UPDATE papers SET pdf_path = ? || substr(pdf_path, ?)
+                            WHERE project_id = ? AND pdf_path LIKE ? || '%'
+                            """, [newPrefix, oldPrefix.count + 1, p.id, oldPrefix])
+                        PDFVault.invalidateAll()
+                        reloadPapers()
+                    } catch { fail(error, "Renaming the review folder") }
+                }
+            }
         } catch { fail(error, "Saving review") }
     }
 

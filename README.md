@@ -242,16 +242,34 @@ Some collections fill themselves from decisions you have already made: **Include
 **No conclusion recorded**. A paper appears the moment its stage matches and leaves if you
 change your mind, so screening does the filing for you.
 
-On disk it is simpler than that: each review owns one folder.
+On disk, each review owns one folder — and Sieve mirrors the structure into real folders
+you can open in Finder:
 
 ```
 ~/Documents/Sieve/
 ├── sieve.sqlite
 ├── Exports/
 └── Reviews/
-    ├── my-scoping-review-1/PDFs/
-    └── cosmetic-packaging-3/PDFs/
+    └── cosmetic-packaging-3/
+        ├── README.txt
+        ├── PDFs/                        one file per paper, ever
+        └── Browse/
+            ├── By screening decision/
+            │   ├── Included/
+            │   └── Excluded (full text)/
+            │       └── Wrong population/
+            ├── By collection/
+            └── By year/
 ```
+
+Everything under `Browse/` is a **symbolic link**, so a paper that belongs to three
+collections appears in all three and still takes up space once — 356 entries in the review
+this was built against occupy **0 bytes**. Delete the whole folder any time; nothing is lost
+and Sieve rebuilds it on request. Group by decision, collection, year, first author or
+database in Settings, and have it rebuild whenever you open the Library.
+
+Files are named `year-author-title`. Titles are transliterated rather than stripped, so a
+Cyrillic, Greek or Chinese paper gets a readable name instead of a row of underscores.
 
 Paths are stored **relative to the library root**, so you can move the whole library to an
 external drive or a synced folder — Settings → Library → Move — without breaking a single

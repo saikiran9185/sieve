@@ -189,14 +189,27 @@ and macOS refuses to open a quarantined app it cannot check with Apple — showi
 says it could not verify the app is free of malware. The checksum published with every release
 is what protects the download instead: it is verified before the app is installed.
 
-### Dragging it across from the disk image
+### If you don't use Terminal
 
-**This route gets blocked, and the dialog is alarming.** macOS will say *"Apple could not
-verify Sieve is free of malware"* and offer only **Move to Trash** and **Done**. It is not a
-malware finding — it is what macOS shows for any app that has not been notarised by Apple,
-and notarisation requires a paid Developer ID.
+Download `Sieve-x.y.dmg` from the [latest release](../../releases/latest), drag Sieve into
+Applications, and open it. macOS will refuse the first time and say it *"could not verify
+Sieve is free of malware"* — that is not a malware finding, it is what macOS says about any
+app that has not been through Apple's paid notarisation service. Then:
 
-If it happens: click **Done**, not Move to Trash, then run
+1. Click **Done**. Not *Move to Trash*.
+2. Open **System Settings** → **Privacy & Security**.
+3. Scroll to **Security**, near the bottom. There is a line saying Sieve was blocked, with an
+   **Open Anyway** button beside it. Click it.
+4. Confirm with Touch ID or your password.
+
+Sieve opens, and every launch after that is normal. **You do this once.**
+
+The same disk image carries these steps in a `READ ME FIRST` file.
+
+### Dragging it across, from Terminal
+
+If you would rather clear the block with one command than click through System Settings,
+click **Done** on the dialog and run
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Sieve.app
@@ -230,6 +243,9 @@ database searches you ask for.
 ## Windows and Linux
 
 **There is no Windows or Linux build, and there will not be one without a substantial rewrite.**
+This gets asked a lot, so here is the actual measurement rather than an assertion: of 14,261
+lines, **1,933 (14%) are plain Swift** that would compile anywhere. The other 86% is SwiftUI,
+AppKit, PDFKit or CoreText.
 
 Sieve's reader is built on **PDFKit** and its interface on **SwiftUI** and **AppKit**, all of
 which are Apple frameworks that exist only on macOS. The PDF reader is not a thin layer over

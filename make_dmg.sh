@@ -17,50 +17,73 @@ ln -s /Applications "$STAGE/Applications"
 
 # A short note so someone who downloads the image knows why macOS will complain.
 cat > "${STAGE}/READ ME FIRST.txt" <<'NOTE'
-Sieve
+Sieve — how to open it the first time
 
 
-IF YOU DRAG THE APP ACROSS, macOS WILL REFUSE TO OPEN IT.
+macOS WILL REFUSE TO OPEN THIS APP THE FIRST TIME. Here is why, and what to do.
 
-You will get a dialog saying "Apple could not verify Sieve is free of malware",
-offering only "Move to Trash" and "Done". That is not a real malware finding. It
-is what macOS shows for any app that has not been notarised by Apple, and
-notarisation requires a paid Apple Developer account.
+You will see a box saying:
 
+    "Sieve" Not Opened
+    Apple could not verify "Sieve" is free of malware that may harm
+    your Mac or compromise your privacy.
+                    [ Move to Trash ]  [ Done ]
 
-THE EASY WAY — paste this into Terminal instead of dragging:
-
-    curl -fsSL https://raw.githubusercontent.com/saikiran9185/sieve/main/install.sh | bash
-
-It downloads the app, checks it against the checksum published with the release,
-installs it, and clears the download flag that triggers the dialog. Or, if you
-have Homebrew:
-
-    brew install --cask saikiran9185/tap/sieve
+That is NOT a malware finding. Nothing was scanned and nothing was found. It is
+what macOS says about any app that has not been through Apple's paid notarisation
+service. Sieve is signed, and every download is published with a checksum you can
+check, but notarisation costs $99 a year and this app is free.
 
 
-IF YOU ALREADY DRAGGED IT AND GOT THE DIALOG:
+=========================================================================
+NO TERMINAL NEEDED — do this once and never again
+=========================================================================
 
-Click "Done" — NOT "Move to Trash" — then paste this into Terminal:
+  1. Drag Sieve into the Applications folder next to this file.
+
+  2. Open Sieve. The box above appears. Click "Done".
+     Do NOT click "Move to Trash".
+
+  3. Open System Settings  (Apple menu, top-left of your screen).
+
+  4. Click "Privacy & Security" in the sidebar.
+
+  5. Scroll down to the "Security" section near the bottom.
+     You will see a line saying Sieve was blocked, with a button
+     next to it: "Open Anyway".  Click it.
+
+  6. Confirm with your fingerprint or password, then click "Open Anyway"
+     once more if asked.
+
+Sieve opens, and every launch after this one is normal. You only do this once.
+
+
+=========================================================================
+IF YOU ARE COMFORTABLE WITH TERMINAL — one line instead of steps 2 to 6
+=========================================================================
 
     xattr -dr com.apple.quarantine /Applications/Sieve.app
 
-Then open Sieve normally. That command removes the "downloaded from the internet"
-flag; it does not change the app.
+That removes the "downloaded from the internet" mark. It changes nothing about
+the app. Or skip this disk image entirely and install with:
+
+    curl -fsSL https://raw.githubusercontent.com/saikiran9185/sieve/main/install.sh | bash
+
+    brew install --cask saikiran9185/tap/sieve      (if you have Homebrew)
 
 
-OR BUILD IT YOURSELF — about thirty seconds, no dependencies:
+=========================================================================
+WHAT SIEVE KEEPS
+=========================================================================
 
-    git clone https://github.com/saikiran9185/sieve.git
-    cd sieve && ./build_app.sh
+Everything lives in a folder at  Documents > Sieve  on your own Mac.
+No account, no sign-in, no telemetry, nothing sent anywhere. Delete that
+folder and nothing of yours remains.
 
+There is no Windows version. Sieve's PDF reader is built on Apple frameworks
+that only exist on macOS; there is no way to run it on Windows.
 
-WHAT SIEVE STORES
-
-Everything lives in ~/Documents/Sieve. No account, no telemetry, nothing sent
-anywhere. Delete that folder and nothing remains.
-
-Source, issues and feedback: https://github.com/saikiran9185/sieve
+Questions, problems, ideas:  https://github.com/saikiran9185/sieve
 NOTE
 
 echo "→ Building disk image…"

@@ -16,28 +16,49 @@ cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
 
 # A short note so someone who downloads the image knows why macOS will complain.
-cat > "$STAGE/READ ME FIRST.txt" <<'NOTE'
+cat > "${STAGE}/READ ME FIRST.txt" <<'NOTE'
 Sieve
 
-1. Drag Sieve into the Applications folder beside it.
 
-2. The app is signed, but not notarised by Apple — notarisation requires a paid
-   Apple Developer account. macOS will therefore refuse to open it the first time
-   and may say the app is damaged. It is not. To clear the download quarantine
-   flag, open Terminal and run:
+IF YOU DRAG THE APP ACROSS, macOS WILL REFUSE TO OPEN IT.
 
-       xattr -dr com.apple.quarantine /Applications/Sieve.app
+You will get a dialog saying "Apple could not verify Sieve is free of malware",
+offering only "Move to Trash" and "Done". That is not a real malware finding. It
+is what macOS shows for any app that has not been notarised by Apple, and
+notarisation requires a paid Apple Developer account.
 
-   Then open Sieve normally.
 
-   If you would rather not run that command, build it yourself instead — it takes
-   about thirty seconds and has no dependencies:
+THE EASY WAY — paste this into Terminal instead of dragging:
 
-       git clone https://github.com/saikiran9185/sieve.git
-       cd sieve && ./build_app.sh
+    curl -fsSL https://raw.githubusercontent.com/saikiran9185/sieve/main/install.sh | bash
 
-3. Everything Sieve stores lives in ~/Documents/Sieve. There is no account and no
-   telemetry. Delete that folder and nothing remains.
+It downloads the app, checks it against the checksum published with the release,
+installs it, and clears the download flag that triggers the dialog. Or, if you
+have Homebrew:
+
+    brew install --cask saikiran9185/tap/sieve
+
+
+IF YOU ALREADY DRAGGED IT AND GOT THE DIALOG:
+
+Click "Done" — NOT "Move to Trash" — then paste this into Terminal:
+
+    xattr -dr com.apple.quarantine /Applications/Sieve.app
+
+Then open Sieve normally. That command removes the "downloaded from the internet"
+flag; it does not change the app.
+
+
+OR BUILD IT YOURSELF — about thirty seconds, no dependencies:
+
+    git clone https://github.com/saikiran9185/sieve.git
+    cd sieve && ./build_app.sh
+
+
+WHAT SIEVE STORES
+
+Everything lives in ~/Documents/Sieve. No account, no telemetry, nothing sent
+anywhere. Delete that folder and nothing remains.
 
 Source, issues and feedback: https://github.com/saikiran9185/sieve
 NOTE

@@ -183,17 +183,27 @@ installs it, and clears the download quarantine flag — so macOS opens it inste
 the app is damaged. There is no `xattr` command to run by hand.
 
 Why that flag needs clearing: the app is signed with the hardened runtime but **not notarised
-by Apple**, because notarisation requires a paid Developer ID that I am not buying to give
-away a research tool. The checksum check is what protects the download instead.
+by Apple**, because notarisation requires a paid Developer ID ($99/year) that I am not buying
+to give away a research tool. Anything downloaded through a browser carries a quarantine flag,
+and macOS refuses to open a quarantined app it cannot check with Apple — showing a dialog that
+says it could not verify the app is free of malware. The checksum published with every release
+is what protects the download instead: it is verified before the app is installed.
 
-### Or drag it across
+### Dragging it across from the disk image
 
-Download `Sieve-x.y.dmg` from the [latest release](../../releases/latest) and drag Sieve into
-Applications. You will then need to clear the flag yourself:
+**This route gets blocked, and the dialog is alarming.** macOS will say *"Apple could not
+verify Sieve is free of malware"* and offer only **Move to Trash** and **Done**. It is not a
+malware finding — it is what macOS shows for any app that has not been notarised by Apple,
+and notarisation requires a paid Developer ID.
+
+If it happens: click **Done**, not Move to Trash, then run
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Sieve.app
 ```
+
+and open it normally. That removes the "downloaded from the internet" flag; it does not
+change the app. The two commands above do this for you, which is why they are listed first.
 
 ### Or build it
 

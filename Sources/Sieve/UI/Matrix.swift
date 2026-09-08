@@ -253,6 +253,7 @@ struct MatrixView: View {
     }
 
     private func fillEmpty() async {
+        await assistant.detectModel()
         fillingAll = true
         defer { fillingAll = false; fillProgress = "" }
         var done = 0
@@ -265,8 +266,11 @@ struct MatrixView: View {
             guard let text = await assistant.draftCell(column: c, paper: p, evidence: ev, tags: store.tags),
                   !text.isEmpty, text != "NOT ENOUGH EVIDENCE" else { continue }
             store.setCell(p.id, c.id, value: text, evidenceIds: ev.map(\.id), ai: true)
+            store.logAI(kind: .draftCell, model: assistant.lastModel,
+                        subjectKind: "cell", subjectId: p.id, columnId: c.id,
+                        asked: c.prompt.isEmpty ? c.name : c.prompt, said: text)
         }
-        store.flash("Drafted \(done) cells — every one is flagged AI, check before you cite")
+        store.flash("Drafted \(done) cells. Every one is logged as unchecked until you read it against the source.")
     }
 }
 
@@ -330,6 +334,7 @@ struct CellEditor: View {
     @State private var linked: Set<Int> = []
     @State private var loaded = false
     @State private var isAI = false
+    @State private var originalDraft: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: D.s3) {
@@ -385,10 +390,15 @@ struct CellEditor: View {
                 if Assistant.isAvailable && assistant.enabled {
                     Button {
                         Task {
+                            await assistant.detectModel()
                             guard let t = await assistant.draftCell(column: column, paper: paper,
                                                                     evidence: store.evidence(forPaper: paper.id),
                                                                     tags: store.tags) else { return }
-                            text = t; isAI = true
+                            text = t; isAI = true; originalDraft = t
+                            store.logAI(kind: .draftCell, model: assistant.lastModel,
+                                        subjectKind: "cell", subjectId: paper.id, columnId: column.id,
+                                        asked: column.prompt.isEmpty ? column.name : column.prompt,
+                                        said: t)
                             linked = Set(store.evidence(forPaper: paper.id).map(\.id))
                         }
                     } label: {
@@ -399,6 +409,15 @@ struct CellEditor: View {
                 }
                 Spacer()
                 Button("Save") {
+                    // Whether the draft survived contact with the researcher is the fact
+                    // worth keeping: accepted as written, or rewritten.
+                    if isAI, let draft = originalDraft {
+                        store.resolveLatestAI(subjectKind: "cell", subjectId: paper.id,
+                                              columnId: column.id,
+                                              text.isEmpty ? .rejected
+                                                : (text == draft ? .accepted : .edited),
+                                              note: text.isEmpty ? "Cleared by the researcher" : "")
+                    }
                     store.setCell(paper.id, column.id, value: text,
                                   evidenceIds: Array(linked), ai: isAI && !text.isEmpty)
                 }

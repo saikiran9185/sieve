@@ -12,6 +12,7 @@ final class Store: ObservableObject {
     @Published var folders: [Folder] = []
     @Published var relations: [Relation] = []
     @Published var membership: [Int: Set<Int>] = [:]
+    @Published var aiEvents: [AIEvent] = []
     @Published var methods: [Method] = []
     @Published var prismaCounts: [String: Int] = [:]
     @Published var checklist: [String: (state: String, location: String)] = [:]
@@ -174,7 +175,7 @@ final class Store: ObservableObject {
     func reloadAll() {
         reloadTags(); reloadFolders(); reloadPapers(); reloadColumns(); reloadEvidence()
         reloadCells(); reloadRelations(); reloadMethods(); reloadPrismaCounts(); reloadChecklist()
-        reloadMembership()
+        reloadMembership(); reloadAIEvents()
     }
 
     // MARK: - Papers
@@ -669,6 +670,107 @@ final class Store: ObservableObject {
             guard n.count == 4 else { return nil }
             return CGRect(x: n[0], y: n[1], width: n[2], height: n[3])
         }
+    }
+
+    // MARK: - AI audit trail
+
+    func reloadAIEvents() {
+        do {
+            aiEvents = try db.query("SELECT * FROM ai_events WHERE project_id=? ORDER BY at DESC",
+                                    [currentProjectId]).map {
+                AIEvent(id: $0.int("id") ?? 0,
+                        projectId: $0.int("project_id") ?? 0,
+                        at: $0.date("at") ?? Date(),
+                        kind: AIEvent.Kind(rawValue: $0.string("kind") ?? "") ?? .screen,
+                        model: $0.string("model") ?? "",
+                        subjectKind: $0.string("subject_kind") ?? "",
+                        subjectId: $0.int("subject_id") ?? 0,
+                        columnId: $0.int("column_id") ?? 0,
+                        asked: $0.string("asked") ?? "",
+                        said: $0.string("said") ?? "",
+                        confidence: $0.string("confidence") ?? "",
+                        outcome: AIEvent.Outcome(rawValue: $0.string("outcome") ?? "") ?? .pending,
+                        outcomeAt: $0.date("outcome_at"),
+                        humanNote: $0.string("human_note") ?? "")
+            }
+        } catch { fail(error, "Loading the AI trail") }
+    }
+
+    /// Records what was asked and what came back, before anyone decides anything about it.
+    @discardableResult
+    func logAI(kind: AIEvent.Kind, model: String, subjectKind: String, subjectId: Int,
+               columnId: Int = 0, asked: String, said: String, confidence: String = "") -> Int {
+        do {
+            let id = try db.run("""
+                INSERT INTO ai_events (project_id, at, kind, model, subject_kind, subject_id,
+                                       column_id, asked, said, confidence, outcome)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                """, [currentProjectId, Date(), kind.rawValue, model, subjectKind, subjectId,
+                      columnId, String(asked.prefix(4000)), String(said.prefix(8000)), confidence,
+                      kind.needsAdjudication ? AIEvent.Outcome.pending.rawValue
+                                             : AIEvent.Outcome.unused.rawValue])
+            reloadAIEvents()
+            return Int(id)
+        } catch { fail(error, "Recording the AI trail"); return 0 }
+    }
+
+    /// The only field on an event that may change: what the human decided.
+    func resolveAI(_ id: Int, _ outcome: AIEvent.Outcome, note: String = "") {
+        guard id > 0 else { return }
+        do {
+            try db.run("UPDATE ai_events SET outcome=?, outcome_at=?, human_note=? WHERE id=?",
+                       [outcome.rawValue, Date(), note, id])
+            reloadAIEvents()
+        } catch { fail(error, "Recording your verdict") }
+    }
+
+    /// Marks the most recent unresolved suggestion about a subject. Used from the decision
+    /// points, where the event id is not to hand but the subject always is.
+    func resolveLatestAI(subjectKind: String, subjectId: Int, columnId: Int = 0,
+                         _ outcome: AIEvent.Outcome, note: String = "") {
+        guard let event = aiEvents.first(where: {
+            $0.subjectKind == subjectKind && $0.subjectId == subjectId
+            && (columnId == 0 || $0.columnId == columnId) && $0.outcome == .pending
+        }) else { return }
+        resolveAI(event.id, outcome, note: note)
+    }
+
+    /// Everything the assistant produced that no one has adjudicated.
+    var unresolvedAI: [AIEvent] {
+        aiEvents.filter { $0.outcome == .pending && $0.kind.needsAdjudication }
+    }
+
+    struct AISummary {
+        var total = 0
+        var byKind: [(AIEvent.Kind, Int)] = []
+        var byOutcome: [(AIEvent.Outcome, Int)] = []
+        var pending = 0
+        var models: [String] = []
+        var firstUse: Date?
+        var lastUse: Date?
+        var everUsed: Bool { total > 0 }
+        /// Included studies whose matrix cells were drafted by the model and never checked.
+        var unverifiedInIncluded = 0
+    }
+
+    var aiSummary: AISummary {
+        var s = AISummary()
+        s.total = aiEvents.count
+        guard !aiEvents.isEmpty else { return s }
+        var kinds: [AIEvent.Kind: Int] = [:], outcomes: [AIEvent.Outcome: Int] = [:]
+        for e in aiEvents { kinds[e.kind, default: 0] += 1; outcomes[e.outcome, default: 0] += 1 }
+        s.byKind = kinds.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
+        s.byOutcome = outcomes.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
+        s.pending = unresolvedAI.count
+        s.models = Array(Set(aiEvents.map(\.model).filter { !$0.isEmpty })).sorted()
+        s.firstUse = aiEvents.map(\.at).min()
+        s.lastUse = aiEvents.map(\.at).max()
+        let includedIds = Set(included.map(\.id))
+        s.unverifiedInIncluded = aiEvents.filter {
+            $0.outcome == .pending && $0.kind.needsAdjudication
+            && (($0.subjectKind == "paper" || $0.subjectKind == "cell") && includedIds.contains($0.subjectId))
+        }.count
+        return s
     }
 
     // MARK: - Relations

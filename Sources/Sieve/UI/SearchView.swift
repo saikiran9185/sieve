@@ -45,6 +45,7 @@ struct SearchView: View {
                 if Assistant.isAvailable && assistant.enabled {
                     Button {
                         Task {
+                            await assistant.detectModel()
                             guard let out = await assistant.buildQueries(
                                 question: store.project?.question.isEmpty == false
                                     ? store.project!.question : engine.query) else { return }
@@ -52,6 +53,12 @@ struct SearchView: View {
                                 .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "-• \t")) }
                                 .filter { $0.count > 3 }
                             showSuggestions = !suggestions.isEmpty
+                            if !suggestions.isEmpty {
+                                store.logAI(kind: .buildQueries, model: assistant.lastModel,
+                                            subjectKind: "project", subjectId: store.currentProjectId,
+                                            asked: store.project?.question ?? engine.query,
+                                            said: suggestions.joined(separator: " · "))
+                            }
                         }
                     } label: {
                         Label("Suggest queries", systemImage: "sparkle")

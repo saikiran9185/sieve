@@ -705,6 +705,15 @@ struct ScreeningView: View {
         guard let p = current else { return }
         let next = queue.indices.contains(index + 1) ? queue[index + 1].id
                  : (index > 0 ? queue[index - 1].id : nil)
+
+        // If the assistant had an opinion about this record, record whether the human went
+        // with it. This is the whole point: not that AI was used, but that it was checked.
+        if let v = verdict {
+            let humanIncluded = (stage == .sought || stage == .included)
+            store.resolveLatestAI(subjectKind: "paper", subjectId: p.id,
+                                  v.include == humanIncluded ? .accepted : .rejected,
+                                  note: humanIncluded ? "Researcher kept it" : "Researcher excluded it")
+        }
         store.setStage(p.id, stage, reason: reason)
         if mode != .decided { selectedId = next }
         verdict = nil
@@ -733,13 +742,23 @@ struct ScreeningView: View {
 
     private func suggestForCurrent() async {
         guard let p = current, let proj = store.project else { return }
+        await assistant.detectModel()
         verdict = await assistant.screen(paper: p, inclusion: proj.inclusionCriteria,
                                          exclusion: proj.exclusionCriteria, question: proj.question)
-        if verdict == nil, !assistant.lastError.isEmpty { store.flash(assistant.lastError) }
+        if let v = verdict {
+            // Logged the moment it is made, not when it is acted on — a suggestion the
+            // researcher ignores is part of the record too.
+            store.logAI(kind: .screen, model: assistant.lastModel,
+                        subjectKind: "paper", subjectId: p.id,
+                        asked: "Screen against the review criteria",
+                        said: (v.include ? "include" : "exclude") + ": " + v.reason,
+                        confidence: v.confidence)
+        } else if !assistant.lastError.isEmpty { store.flash(assistant.lastError) }
     }
 
     private func autoScreenAll() async {
         guard let proj = store.project else { return }
+        await assistant.detectModel()
         autoScreening = true
         defer { autoScreening = false; autoProgress = "" }
         let batch = queue
@@ -748,14 +767,15 @@ struct ScreeningView: View {
             guard let v = await assistant.screen(paper: p, inclusion: proj.inclusionCriteria,
                                                  exclusion: proj.exclusionCriteria, question: proj.question)
             else { continue }
-            var q = p
-            let line = "[Claude, \(Date().formatted(date: .abbreviated, time: .omitted))] "
-                + (v.include ? "suggests INCLUDE" : "suggests EXCLUDE")
-                + " (\(v.confidence)): \(v.reason)"
-            q.notes = q.notes.isEmpty ? line : q.notes + "\n" + line
-            store.updatePaper(q)
+            // Recorded in the trail rather than pasted into the researcher's own notes,
+            // where it would become indistinguishable from something they wrote themselves.
+            store.logAI(kind: .screen, model: assistant.lastModel,
+                        subjectKind: "paper", subjectId: p.id,
+                        asked: "Pre-screen against the review criteria",
+                        said: (v.include ? "include" : "exclude") + ": " + v.reason,
+                        confidence: v.confidence)
         }
-        store.flash("Claude left a recommendation on \(batch.count) records — decisions are still yours")
+        store.flash("\(batch.count) recommendations recorded in the AI trail — none of them decided anything")
     }
 
     /// Shortcuts chosen so the left hand can stay on the home row through a whole screening

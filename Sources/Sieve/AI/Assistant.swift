@@ -9,6 +9,21 @@ final class Assistant: ObservableObject {
     @Published var busy = false
     @Published var lastOutput = ""
     @Published var lastError = ""
+    /// Which model actually answered, recorded alongside every suggestion so the trail says
+    /// what produced a claim rather than just that "AI" did.
+    @Published var lastModel = ""
+
+    /// Asks the CLI what it is running, once per launch.
+    func detectModel() async {
+        guard lastModel.isEmpty else { return }
+        if let out = try? await run(prompt: "Reply with only your model identifier, nothing else.",
+                                    system: "Answer in one short token."),
+           out.count < 60, !out.isEmpty {
+            lastModel = out.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            lastModel = "claude (model not reported)"
+        }
+    }
 
     static var binaryPath: String? {
         let candidates = [

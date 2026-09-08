@@ -250,9 +250,14 @@ struct EvidenceView: View {
                 Button("Close") { showAsk = false }
                 Button("Ask") {
                     Task {
+                        await assistant.detectModel()
                         answer = await assistant.askCorpus(question: askText, evidence: items,
                                                            papers: store.papers, tags: store.tags)
-                        if answer == nil { answer = assistant.lastError }
+                        if let a = answer {
+                            store.logAI(kind: .askCorpus, model: assistant.lastModel,
+                                        subjectKind: "project", subjectId: store.currentProjectId,
+                                        asked: askText, said: a)
+                        } else { answer = assistant.lastError }
                     }
                 }
                 .buttonStyle(.borderedProminent)

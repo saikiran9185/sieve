@@ -157,6 +157,30 @@ enum Schema {
             PRIMARY KEY (project_id, item)
         );
 
+        -- Append-only record of everything the assistant was asked and everything it said,
+        -- and what the human did about it afterwards. A boolean "this was AI" is enough to
+        -- put a badge on screen; it is not enough to answer "what did the model claim, and
+        -- did anyone check it?" — which is the question a supervisor, a reviewer or a journal
+        -- will actually ask.
+        CREATE TABLE IF NOT EXISTS ai_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            at REAL NOT NULL,
+            kind TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT '',
+            subject_kind TEXT NOT NULL DEFAULT '',
+            subject_id INTEGER NOT NULL DEFAULT 0,
+            column_id INTEGER NOT NULL DEFAULT 0,
+            asked TEXT NOT NULL DEFAULT '',
+            said TEXT NOT NULL DEFAULT '',
+            confidence TEXT NOT NULL DEFAULT '',
+            outcome TEXT NOT NULL DEFAULT 'pending',
+            outcome_at REAL,
+            human_note TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_project ON ai_events(project_id, outcome);
+        CREATE INDEX IF NOT EXISTS idx_ai_subject ON ai_events(subject_kind, subject_id);
+
         CREATE TABLE IF NOT EXISTS search_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

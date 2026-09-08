@@ -305,6 +305,33 @@ Paths are stored **relative to the library root**, so you can move the whole lib
 external drive or a synced folder — Settings → Library → Move — without breaking a single
 record.
 
+## Where the AI gets checked
+
+A model can read faster than you and will not show its working. Sieve does not try to beat it
+at that. It is the place the work gets checked, and the checking gets recorded.
+
+Every assistant interaction is written to an append-only trail: what was asked, what it
+answered, which model answered, and — the part a flag cannot capture — **what you then decided
+about it.** Accepted as given, accepted after editing, rejected, or read and not used. The
+**AI trail** screen is a queue of everything nobody has adjudicated yet.
+
+From that trail Sieve writes the **declaration of generative AI use** that Elsevier, Springer
+Nature, JAMA and the ICMJE now require. Most people write that paragraph from memory at
+submission. This one is written from a record made at the time, and it will say so plainly
+when suggestions were never checked:
+
+> **1 of 4 AI outputs had not been checked by the author at the time of writing, including 1
+> relating to studies included in the review.**
+
+and only claims the clean version when it is true:
+
+> **Every AI suggestion was subsequently checked by the author against the source and
+> accepted, edited or rejected.**
+
+It also states what AI was structurally prevented from doing: no screening decision, no
+extraction of text from a source, no writing. Those are not promises — they are properties of
+how the app is built, and the trail is the evidence.
+
 ## Proof, not intention
 
 PRISMA separates reports *sought* from reports *retrieved*, and Sieve treats that as a fact

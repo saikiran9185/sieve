@@ -425,6 +425,122 @@ enum Exporters {
         return svg
     }
 
+    // MARK: AI use
+
+    /// The declaration journals now ask for, written from the trail rather than from memory.
+    ///
+    /// Elsevier, Springer Nature, JAMA, Nature and the ICMJE all require authors to state how
+    /// generative AI was used and to confirm they take responsibility for the content. Most
+    /// people write that paragraph from memory at submission. This writes it from a record
+    /// made at the time, and — the part that matters — it will say so plainly when suggestions
+    /// were never checked.
+    static func aiDisclosureText(_ store: Store) -> String {
+        let s = store.aiSummary
+        var out = "# Declaration of generative AI use\n\n"
+        out += "**Review:** \(store.project?.name ?? "Untitled")\n"
+        if let q = store.project?.question, !q.isEmpty { out += "**Question:** \(q)\n" }
+        out += "**Prepared:** \(Date().formatted(date: .long, time: .shortened))\n\n"
+
+        guard s.everUsed else {
+            out += "## Statement\n\n"
+            out += "No generative AI was used at any stage of this review. Sieve records every "
+            out += "assistant interaction, and none took place in this project.\n"
+            return out
+        }
+
+        out += "## Statement\n\n"
+        out += "Generative AI was used during the preparation of this review. "
+        out += "The tool\(s.models.count == 1 ? " was" : "s were") \(s.models.joined(separator: ", ")), "
+        out += "accessed through Sieve between "
+        out += "\(s.firstUse?.formatted(date: .long, time: .omitted) ?? "-") and "
+        out += "\(s.lastUse?.formatted(date: .long, time: .omitted) ?? "-"). "
+        out += "AI was used only to *suggest*; it made no screening decision and wrote no text "
+        out += "into the review that was not reviewed by the author. "
+        if s.pending == 0 {
+            out += "**Every AI suggestion was subsequently checked by the author against the "
+            out += "source and accepted, edited or rejected.** "
+        } else {
+            out += "**\(s.pending) of \(s.total) AI outputs had not been checked by the author "
+            out += "at the time of writing"
+            if s.unverifiedInIncluded > 0 {
+                out += ", including \(s.unverifiedInIncluded) relating to studies included in the review"
+            }
+            out += ".** "
+        }
+        out += "The author takes full responsibility for the content of this review.\n\n"
+
+        out += "## What it was used for\n\n"
+        out += "| Task | Times | What it was allowed to do |\n|---|---|---|\n"
+        for (kind, n) in s.byKind {
+            let scope: String
+            switch kind {
+            case .screen: scope = "Suggest include or exclude. Recorded only; every decision was made by the author."
+            case .suggestTag: scope = "Propose a category for a passage the author had already highlighted."
+            case .draftCell: scope = "Draft a data-extraction cell from the author's own highlights of that paper."
+            case .askCorpus: scope = "Answer a question using only the author's highlights. Shapes no stored data."
+            case .buildQueries: scope = "Propose alternative database search strings."
+            }
+            out += "| \(kind.label) | \(n) | \(scope) |\n"
+        }
+
+        out += "\n## What the author did about it\n\n"
+        out += "| Outcome | Count |\n|---|---|\n"
+        for (outcome, n) in s.byOutcome { out += "| \(outcome.label) | \(n) |\n" }
+
+        let adjudicable = store.aiEvents.filter { $0.kind.needsAdjudication }
+        let checked = adjudicable.filter { $0.outcome != .pending }.count
+        if !adjudicable.isEmpty {
+            let pct = Int(round(Double(checked) / Double(adjudicable.count) * 100))
+            out += "\n\(checked) of \(adjudicable.count) suggestions requiring a judgement were "
+            out += "adjudicated (\(pct)%).\n"
+        }
+
+        out += "\n## What AI was not used for\n\n"
+        out += "- No screening or eligibility decision was taken by AI. Every stage change in the "
+        out += "PRISMA flow was made by the author.\n"
+        out += "- No text was extracted from a source by AI. Every highlight was made by the author "
+        out += "selecting it in the PDF.\n"
+        out += "- Abstracts, keywords and conclusions read out of PDFs were extracted by text parsing, "
+        out += "not by a model.\n"
+        out += "- No AI was used to write the review itself.\n"
+
+        out += "\n## Full record\n\n"
+        out += "Every interaction below was logged when it happened, not reconstructed afterwards.\n\n"
+        for e in store.aiEvents.sorted(by: { $0.at < $1.at }) {
+            out += "- \(e.line(store: store))\n"
+        }
+        return out
+    }
+
+    static func exportAIDisclosure(_ store: Store) {
+        save(text: aiDisclosureText(store), suggested: "AI-use-declaration.md", store: store)
+    }
+
+    static func aiTrailCSV(_ store: Store) -> String {
+        var out = ["When,Task,Model,Subject,Column,Asked,It said,Confidence,Outcome,Decided,Note"]
+        for e in store.aiEvents.sorted(by: { $0.at < $1.at }) {
+            let subject: String
+            switch e.subjectKind {
+            case "paper", "cell": subject = store.paper(e.subjectId)?.citeKey ?? ""
+            case "evidence": subject = store.evidence(e.subjectId)?.quote ?? ""
+            default: subject = store.project?.name ?? ""
+            }
+            out.append([
+                e.at.formatted(date: .numeric, time: .standard),
+                e.kind.label, e.model, subject,
+                store.columns.first { $0.id == e.columnId }?.name ?? "",
+                e.asked, e.said, e.confidence, e.outcome.label,
+                e.outcomeAt?.formatted(date: .numeric, time: .standard) ?? "",
+                e.humanNote
+            ].map(csvEscape).joined(separator: ","))
+        }
+        return out.joined(separator: "\n")
+    }
+
+    static func exportAITrail(_ store: Store) {
+        save(text: aiTrailCSV(store), suggested: "AI-trail.csv", store: store)
+    }
+
     // MARK: Spreadsheet and PDF
 
     static func exportMatrixXLSX(_ store: Store, rows: [Paper]) {
@@ -569,6 +685,8 @@ enum Exporters {
         write("05-included.ris", risText(store, included))
         write("05-everything.ris", risText(store, all))
         write("06-library.csv", papersCSV(store, all))
+        write("06-AI-use-declaration.md", aiDisclosureText(store))
+        write("06-AI-trail.csv", aiTrailCSV(store))
         write("07-search-history.txt", store.searchRuns().map {
             "\"\($0.query)\"\n  \($0.providers)\n  \($0.results) results, \($0.imported) added — \($0.at.formatted(date: .long, time: .shortened))"
         }.joined(separator: "\n\n"))
@@ -586,7 +704,9 @@ enum Exporters {
         05  BibTeX and RIS for the included papers, and RIS for everything. Import straight
             into Zotero, Mendeley, EndNote, Word or LaTeX — your notes and highlights travel
             with the records.
-        06  The full library including everything screened out, with the reason.
+        06  The full library including everything screened out, with the reason, plus the
+            declaration of generative AI use that journals now ask for, and the complete
+            record it was written from.
         07  Every database search that was run, with dates — required when reporting a systematic review.
 
         Papers: \(all.count) total, \(included.count) included.

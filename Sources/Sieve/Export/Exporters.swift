@@ -60,6 +60,69 @@ enum Exporters {
         save(text: bibText(store, store.included), suggested: "included.bib", store: store)
     }
 
+    /// RIS is what Zotero, Mendeley and EndNote all read. Sieve could already import it;
+    /// without an exporter a review could go in but never come back out to a reference
+    /// manager, which is where most people write from.
+    static func risText(_ store: Store, _ papers: [Paper]) -> String {
+        var out = ""
+        for p in papers {
+            out += "TY  - \(risType(p))\n"
+            for author in p.authors { out += "AU  - \(risAuthor(author))\n" }
+            out += "TI  - \(p.title)\n"
+            if let y = p.year { out += "PY  - \(y)\n" }
+            if !p.pubDate.isEmpty { out += "DA  - \(p.pubDate)\n" }
+            if !p.venue.isEmpty { out += "JO  - \(p.venue)\n" }
+            if !p.doi.isEmpty { out += "DO  - \(p.doi)\n" }
+            if !p.abstract.isEmpty {
+                out += "AB  - \(p.abstract.replacingOccurrences(of: "\n", with: " "))\n"
+            }
+            for k in p.keywords { out += "KW  - \(k)\n" }
+            for g in p.sdgs { out += "KW  - SDG: \(g)\n" }
+            if !p.url.isEmpty { out += "UR  - \(p.url)\n" }
+            if p.hasPDF { out += "L1  - \(p.pdfPath)\n" }
+            // Your own work travels with the record rather than being left behind.
+            var notes: [String] = []
+            if !p.conclusion.isEmpty { notes.append("Conclusion: \(p.conclusion)") }
+            if !p.notes.isEmpty { notes.append(p.notes) }
+            if !p.excludeReason.isEmpty { notes.append("Excluded: \(p.excludeReason)") }
+            let highlights = store.evidence(forPaper: p.id)
+            if !highlights.isEmpty {
+                notes.append(highlights.map { "[p.\($0.page + 1)] \($0.quote)" }.joined(separator: " | "))
+            }
+            if !notes.isEmpty {
+                out += "N1  - \(notes.joined(separator: " — ").replacingOccurrences(of: "\n", with: " "))\n"
+            }
+            out += "ER  - \n\n"
+        }
+        return out
+    }
+
+    private static func risType(_ p: Paper) -> String {
+        switch p.sourceType {
+        case .book: return "BOOK"
+        case .chapter: return "CHAP"
+        case .report: return "RPRT"
+        case .thesis: return "THES"
+        case .website: return "ELEC"
+        case .dataset: return "DATA"
+        case .video: return "VIDEO"
+        case .interview: return "PCOMM"
+        default: return p.docType.lowercased().contains("preprint") ? "MANSCPT" : "JOUR"
+        }
+    }
+
+    /// RIS expects "Family, Given".
+    private static func risAuthor(_ name: String) -> String {
+        if name.contains(",") { return name }
+        let parts = name.split(separator: " ")
+        guard parts.count > 1, let family = parts.last else { return name }
+        return "\(family), \(parts.dropLast().joined(separator: " "))"
+    }
+
+    static func exportRIS(_ store: Store, _ papers: [Paper]) {
+        save(text: risText(store, papers), suggested: "sieve-export.ris", store: store)
+    }
+
     static func bibText(_ store: Store, _ papers: [Paper]) -> String {
         var out = ""
         for p in papers {
@@ -503,6 +566,8 @@ enum Exporters {
         write("04-highlights.xlsx", XLSX.build(grid: evidenceGrid(store, store.evidence),
                                                sheetName: "Highlights"))
         write("05-included.bib", bibText(store, included))
+        write("05-included.ris", risText(store, included))
+        write("05-everything.ris", risText(store, all))
         write("06-library.csv", papersCSV(store, all))
         write("07-search-history.txt", store.searchRuns().map {
             "\"\($0.query)\"\n  \($0.providers)\n  \($0.results) results, \($0.imported) added — \($0.at.formatted(date: .long, time: .shortened))"
@@ -518,7 +583,9 @@ enum Exporters {
         03  The PRISMA 2020 flow: counts as text, a vector diagram for the thesis, and the
             27-item reporting checklist with where each item is reported.
         04  Every highlight with its page, category, source paper and DOI.
-        05  BibTeX for the included papers — import straight into Word, LaTeX or Zotero.
+        05  BibTeX and RIS for the included papers, and RIS for everything. Import straight
+            into Zotero, Mendeley, EndNote, Word or LaTeX — your notes and highlights travel
+            with the records.
         06  The full library including everything screened out, with the reason.
         07  Every database search that was run, with dates — required when reporting a systematic review.
 

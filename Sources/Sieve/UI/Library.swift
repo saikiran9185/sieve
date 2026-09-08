@@ -150,6 +150,10 @@ struct LibraryView: View {
                 Button("Included papers as CSV") { Exporters.exportPapersCSV(store, only: .included) }
                 Button("Whole library as CSV") { Exporters.exportPapersCSV(store, only: nil) }
                 Button("BibTeX of included") { Exporters.exportBibTeX(store) }
+                Button("RIS of included (Zotero, Mendeley, EndNote)") {
+                    Exporters.exportRIS(store, store.included)
+                }
+                Button("RIS of everything") { Exporters.exportRIS(store, store.papers) }
                 Button("Full review report as PDF") { Exporters.exportReportPDF(store) }
             } label: { Label("Export", systemImage: "square.and.arrow.up") }
                 .frame(width: 100)
@@ -250,8 +254,14 @@ struct LibraryView: View {
                 }
             } label: { Label("Add to collection", systemImage: "folder.badge.plus") }
                 .frame(width: 170)
-            Button("Send to screening") { selected.forEach { store.setStage($0, .screening) }; selected = [] }
-            Button("Mark included") { selected.forEach { store.setStage($0, .included) }; selected = [] }
+            Button("Send to screening") {
+                store.batch { selected.forEach { store.setStage($0, .screening) } }
+                selected = []
+            }
+            Button("Mark included") {
+                store.batch { selected.forEach { store.setStage($0, .included) } }
+                selected = []
+            }
             Button("Fetch free PDFs") {
                 let ids = Array(selected); selected = []
                 Task { @MainActor in
@@ -262,7 +272,10 @@ struct LibraryView: View {
                     store.flash("Finished fetching")
                 }
             }
-            Button("Delete", role: .destructive) { selected.forEach { store.deletePaper($0) }; selected = [] }
+            Button("Delete", role: .destructive) {
+                store.batch { selected.forEach { store.deletePaper($0) } }
+                selected = []
+            }
             Button("Clear") { selected = [] }
         }
         .padding(.horizontal, D.s4).padding(.vertical, D.s2)

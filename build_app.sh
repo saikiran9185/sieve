@@ -3,6 +3,11 @@
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 NAME="Sieve"
+# The version shown in Finder, About, and to Homebrew. Passed in, or read from the newest
+# git tag, so a build never misreports which release it is.
+VERSION="${1:-$(git -C "$(cd "$(dirname "$0")" && pwd)" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')}"
+VERSION="${VERSION:-0.0}"
+BUILD="$(git -C "$(cd "$(dirname "$0")" && pwd)" rev-list --count HEAD 2>/dev/null || echo 1)"
 APP="$ROOT/$NAME.app"
 
 echo "→ Compiling (release)…"
@@ -23,8 +28,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>$NAME</string>
   <key>CFBundleDisplayName</key><string>$NAME</string>
   <key>CFBundleIdentifier</key><string>com.saikiran.$NAME</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>$NAME</string>
   <key>CFBundleIconFile</key><string>$NAME</string>
@@ -63,4 +68,4 @@ codesign --force --deep --options=runtime   --entitlements "$ROOT/Sieve.entitlem
 rm -f "$ROOT/Sieve.entitlements"
 
 codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "^(Identifier|Signature|CodeDirectory)" | sed 's/^/  /'
-echo "✓ Built $APP"
+echo "✓ Built $APP  (version $VERSION, build $BUILD)"

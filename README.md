@@ -44,7 +44,9 @@ No account, no server, no subscription.
    Google Scholar. Run duplicate detection. **Fill in missing details** backfills abstracts,
    SDGs and citation lists for anything added before those fields existed.
 4. **Screening** — a list on the left, the record in the middle, and the decision pinned to
-   a rail on the right that never scrolls away. Every exclusion reason is on screen at once,
+   a rail on the right that never scrolls away. Terms from your inclusion criteria are tinted
+   green inside the abstract and exclusion terms red, with a count beside the heading, so a
+   record matching nothing you asked for is obvious before you read a line. Every exclusion reason is on screen at once,
    each on its own number key, so a record is judged and filed without touching the mouse. `F` keeps it, `1`–`9` exclude with that
    reason, `J`/`K` move — all under the left hand, so a long screening session never moves it.
    Press `?` for the full list. Record a **conclusion** and what you still need to read,
@@ -162,46 +164,47 @@ it as your own starting point.
 
 ## Install
 
-**Requires macOS 14 or later.** Apple Silicon and Intel both work.
+**macOS 14 or later.** Apple Silicon and Intel.
 
-### Build it yourself (recommended)
-
-You need Xcode or the Command Line Tools (`xcode-select --install`).
+### One command
 
 ```sh
-git clone https://github.com/saikiran9185/sieve.git
-cd sieve
-./build_app.sh
-open Sieve.app          # or drag it to /Applications
+brew install --cask saikiran9185/tap/sieve
 ```
 
-That is the whole process — no package manager, no dependencies to fetch, no account.
-The build takes about 30 seconds.
+or, without Homebrew:
 
-### Download the disk image
+```sh
+curl -fsSL https://raw.githubusercontent.com/saikiran9185/sieve/main/install.sh | bash
+```
 
-Grab **`Sieve-1.0.dmg`** from the [latest release](../../releases/latest), open it, and drag
-Sieve to Applications.
+Either one downloads the latest release, checks it against the SHA-256 published with it,
+installs it, and clears the download quarantine flag — so macOS opens it instead of claiming
+the app is damaged. There is no `xattr` command to run by hand.
 
-The app is signed with the hardened runtime but **not notarised by Apple** — notarisation
-requires a paid Developer ID, which I am not buying to give away a research tool. macOS will
-therefore refuse to open it the first time and may claim it is damaged. It is not. Clear the
-download quarantine flag:
+Why that flag needs clearing: the app is signed with the hardened runtime but **not notarised
+by Apple**, because notarisation requires a paid Developer ID that I am not buying to give
+away a research tool. The checksum check is what protects the download instead.
+
+### Or drag it across
+
+Download `Sieve-x.y.dmg` from the [latest release](../../releases/latest) and drag Sieve into
+Applications. You will then need to clear the flag yourself:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Sieve.app
 ```
 
-Then open it normally. The disk image contains the same instructions.
+### Or build it
 
-Every release lists a SHA-256 checksum. Verify your download matches before opening it:
+About thirty seconds, no dependencies to fetch, and you get to read what you are running.
 
 ```sh
-shasum -a 256 ~/Downloads/Sieve-1.0.dmg
+git clone https://github.com/saikiran9185/sieve.git
+cd sieve
+./build_app.sh
+open Sieve.app
 ```
-
-If you would rather not run any of that, build from source above — it takes about the same
-amount of time and you get to read what you are running.
 
 ## Build
 
@@ -216,7 +219,7 @@ database searches you ask for.
 
 ## Windows and Linux
 
-There is no Windows or Linux build, and there will not be one without a substantial rewrite.
+**There is no Windows or Linux build, and there will not be one without a substantial rewrite.**
 
 Sieve's reader is built on **PDFKit** and its interface on **SwiftUI** and **AppKit**, all of
 which are Apple frameworks that exist only on macOS. The PDF reader is not a thin layer over
@@ -293,6 +296,22 @@ Both, or whatever the system is set to — in Settings, or the View menu. The ta
 authored for a dark ground, so the light variant of each colour is derived rather than
 maintained separately: measured against white, amber reached only 1.7:1 as authored and 4.65:1
 after. All nine tag colours clear WCAG 4.5:1 in both modes.
+
+## Getting your work back out
+
+Nothing here is a dead end. A review exports as:
+
+| Format | For |
+| --- | --- |
+| **RIS** | Zotero, Mendeley, EndNote — with your conclusions, notes, exclusion reasons and highlights in the note field |
+| **BibTeX** | LaTeX, Word, Zotero |
+| **XLSX / CSV** | the matrix, as a spreadsheet |
+| **PDF** | the whole review as one document, or the matrix as a table |
+| **Markdown** | every highlight, grouped by category, with citations |
+| **SVG / PNG** | the PRISMA flow diagram, at any size |
+
+One action — Export → *Everything in one folder* — writes all of it plus the PRISMA checklist
+and your full search history into a dated folder.
 
 ## Privacy and security
 

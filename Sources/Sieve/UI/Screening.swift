@@ -21,6 +21,7 @@ struct ScreeningView: View {
     @AppStorage("sieve.screeningQueueWidth") private var queueWidth: Double = 300
     @AppStorage("sieve.screeningRailWidth") private var railWidth: Double = 260
     @State private var showShortcuts = false
+    @AppStorage("sieve.highlightCriteria") private var highlightCriteria = true
 
     enum Mode: String, CaseIterable, Identifiable {
         case titleAbstract = "Title & abstract"
@@ -582,8 +583,27 @@ struct ScreeningView: View {
     }
 
     private func abstractBlock(_ p: Paper) -> some View {
-        VStack(alignment: .leading, spacing: D.s2) {
-            SectionLabel(text: "Abstract")
+        let inc = store.project?.inclusionCriteria ?? ""
+        let exc = store.project?.exclusionCriteria ?? ""
+        let hits = CriteriaHighlight.matchCount(p.abstract, criteria: inc)
+        let misses = CriteriaHighlight.matchCount(p.abstract, criteria: exc)
+
+        return VStack(alignment: .leading, spacing: D.s2) {
+            HStack(spacing: 6) {
+                SectionLabel(text: "Abstract")
+                if !p.abstract.isEmpty, !inc.isEmpty || !exc.isEmpty {
+                    // Your criteria words, counted before you read a line. A record matching
+                    // nothing you asked for is usually a quick no.
+                    if hits > 0 { Chip(text: "\(hits) include term\(hits == 1 ? "" : "s")", color: Palette.emerald) }
+                    if misses > 0 { Chip(text: "\(misses) exclude term\(misses == 1 ? "" : "s")", color: Palette.rose) }
+                    if hits == 0 && misses == 0 {
+                        Chip(text: "no criteria words found", color: Palette.slate)
+                    }
+                    Spacer()
+                    Toggle("Highlight criteria", isOn: $highlightCriteria)
+                        .toggleStyle(.checkbox).font(D.small)
+                }
+            }
             if p.abstract.isEmpty {
                 HStack {
                     Text("No abstract came with this record.")
@@ -591,6 +611,14 @@ struct ScreeningView: View {
                     Button("Look it up") { Task { await fetchAbstract(p) } }
                         .font(D.small)
                 }
+            } else if highlightCriteria, !inc.isEmpty || !exc.isEmpty {
+                Text(CriteriaHighlight.attributed(p.abstract, include: inc, exclude: exc,
+                                                  includeColor: Palette.emerald,
+                                                  excludeColor: Palette.rose))
+                    .font(.system(size: 15, design: .serif))
+                    .lineSpacing(4)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 760, alignment: .leading)
             } else {
                 Text(p.abstract)
                     .font(.system(size: 15, design: .serif))

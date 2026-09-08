@@ -179,7 +179,23 @@ final class Store: ObservableObject {
 
     // MARK: - Papers
 
+    /// Groups a run of changes so the papers table is read back once at the end instead of
+    /// after every row. A bulk action over 60 records was rebuilding 8,940 row objects to
+    /// change 60 of them, and the cost grows with the square of the review.
+    private var suspendReloads = false
+
+    func batch(_ body: () -> Void) {
+        let wasSuspended = suspendReloads
+        suspendReloads = true
+        body()
+        suspendReloads = wasSuspended
+        guard !suspendReloads else { return }
+        reloadPapers()
+        reloadMembership()
+    }
+
     func reloadPapers() {
+        guard !suspendReloads else { return }
         do {
             papers = try db.query("SELECT * FROM papers WHERE project_id=? ORDER BY added_at DESC",
                                   [currentProjectId]).map(Store.paper(from:))
@@ -331,8 +347,11 @@ final class Store: ObservableObject {
     }
 
     func deletePaper(_ id: Int) {
-        do { try db.run("DELETE FROM papers WHERE id=?", [id]); reloadPapers(); reloadEvidence() }
-        catch { fail(error, "Deleting paper") }
+        do {
+            if let path = paper(id)?.pdfPath { PDFVault.invalidate(path) }
+            try db.run("DELETE FROM papers WHERE id=?", [id])
+            reloadPapers(); reloadEvidence()
+        } catch { fail(error, "Deleting paper") }
     }
 
     func toggleStar(_ id: Int) {
@@ -346,8 +365,10 @@ final class Store: ObservableObject {
     @discardableResult
     func markMissingAsNotRetrieved() -> Int {
         let targets = missingFullTexts.filter { $0.stage != .included }
-        for p in targets {
-            setStage(p.id, .notRetrieved, reason: "Full text could not be obtained")
+        batch {
+            for p in targets {
+                setStage(p.id, .notRetrieved, reason: "Full text could not be obtained")
+            }
         }
         return targets.count
     }
@@ -359,13 +380,14 @@ final class Store: ObservableObject {
         var seen = Set<String>()
         var n = 0
         let sorted = papers.sorted { $0.addedAt < $1.addedAt }
-        for p in sorted where p.stage != .duplicate {
-            if seen.contains(p.dedupeKey) {
-                setStage(p.id, .duplicate, reason: "Duplicate record")
-                n += 1
-            } else { seen.insert(p.dedupeKey) }
+        batch {
+            for p in sorted where p.stage != .duplicate {
+                if seen.contains(p.dedupeKey) {
+                    setStage(p.id, .duplicate, reason: "Duplicate record")
+                    n += 1
+                } else { seen.insert(p.dedupeKey) }
+            }
         }
-        reloadPapers()
         return n
     }
 

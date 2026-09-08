@@ -91,8 +91,25 @@ rm -f "$DMG"
 hdiutil create -volname "$NAME $VERSION" -srcfolder "$STAGE" -ov -format UDZO \
   -fs HFS+ "$DMG" >/dev/null
 
-rm -rf "$STAGE"
-codesign --force --sign - "$DMG" 2>/dev/null || true
+rm -rf "${STAGE}"
+
+# Sign the image with the same identity the app got, so the two agree.
+IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+  | grep -o '"Developer ID Application:[^"]*"' | head -1 | tr -d '"')
+[ -z "$IDENTITY" ] && IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
+  | grep -o '"Apple Development:[^"]*"' | head -1 | tr -d '"')
+codesign --force --sign "${IDENTITY:--}" "$DMG" 2>/dev/null || codesign --force --sign - "$DMG" 2>/dev/null || true
+
+# Notarise when credentials are stored. Only a Developer ID signature can be notarised;
+# see NOTARISING.md for how to get one and store the profile.
+if [ -n "${SIEVE_NOTARY_PROFILE:-}" ]; then
+  echo "→ Notarising (a few minutes)..."
+  if xcrun notarytool submit "$DMG" --keychain-profile "$SIEVE_NOTARY_PROFILE" --wait; then
+    xcrun stapler staple "$DMG" && echo "  ticket stapled — this image opens with no dialog anywhere"
+  else
+    echo "  notarisation failed; the image is still usable but will show the Gatekeeper dialog"
+  fi
+fi
 
 echo "✓ Built $DMG  ($(du -h "$DMG" | cut -f1))"
 shasum -a 256 "$DMG" | awk '{print "  SHA-256: "$1}'

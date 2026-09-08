@@ -182,12 +182,13 @@ Either one downloads the latest release, checks it against the SHA-256 published
 installs it, and clears the download quarantine flag — so macOS opens it instead of claiming
 the app is damaged. There is no `xattr` command to run by hand.
 
-Why that flag needs clearing: the app is signed with the hardened runtime but **not notarised
-by Apple**, because notarisation requires a paid Developer ID ($99/year) that I am not buying
-to give away a research tool. Anything downloaded through a browser carries a quarantine flag,
-and macOS refuses to open a quarantined app it cannot check with Apple — showing a dialog that
-says it could not verify the app is free of malware. The checksum published with every release
-is what protects the download instead: it is verified before the app is installed.
+Why that flag needs clearing: the app is signed but **not notarised by Apple**, which requires
+a paid Developer ID ($99/year). macOS refuses to open a quarantined app it cannot check with
+Apple, and says it *could not verify the app is free of malware* — a statement about the
+signature, not a scan result. The checksum published with every release is what protects the
+download instead, and it is verified before the app is installed.
+[NOTARISING.md](NOTARISING.md) explains the three signing levels and how to reach the one
+where nobody sees that dialog.
 
 ### If you don't use Terminal
 

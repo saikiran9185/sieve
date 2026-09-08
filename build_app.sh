@@ -62,10 +62,44 @@ cat > "$ROOT/Sieve.entitlements" <<'ENT'
 </plist>
 ENT
 
+# Pick the strongest signing identity available.
+#
+#   Developer ID Application  — the only one Apple will notarise, and the only one that
+#                               satisfies Gatekeeper on someone else's Mac. Needs the paid
+#                               Apple Developer Program.
+#   Apple Development         — free with any Apple ID. Gatekeeper accepts it on machines
+#                               that trust the certificate, which in practice means yours.
+#                               An ad-hoc build is refused there even unquarantined.
+#   ad-hoc                    — no identity at all. Always shows the "could not verify"
+#                               dialog on a fresh download.
+#
+# Override with SIEVE_SIGN_IDENTITY, or force the lowest with SIEVE_ADHOC=1.
+if [ "${SIEVE_ADHOC:-0}" = "1" ]; then
+  IDENTITY="-"; IDENTITY_NAME="ad-hoc (forced)"
+elif [ -n "${SIEVE_SIGN_IDENTITY:-}" ]; then
+  IDENTITY="$SIEVE_SIGN_IDENTITY"; IDENTITY_NAME="$SIEVE_SIGN_IDENTITY"
+else
+  IDENTITY_NAME=$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -o '"Developer ID Application:[^"]*"' | head -1 | tr -d '"')
+  [ -z "$IDENTITY_NAME" ] && IDENTITY_NAME=$(security find-identity -v -p codesigning 2>/dev/null \
+    | grep -o '"Apple Development:[^"]*"' | head -1 | tr -d '"')
+  if [ -n "$IDENTITY_NAME" ]; then IDENTITY="$IDENTITY_NAME"; else IDENTITY="-"; IDENTITY_NAME="ad-hoc"; fi
+fi
+
 # Hardened runtime: library validation on, code injection and unsigned-memory execution off.
-codesign --force --deep --options=runtime   --entitlements "$ROOT/Sieve.entitlements"   --sign - --identifier "com.saikiran.$NAME" "$APP" 2>/dev/null
+codesign --force --deep --options=runtime \
+  --entitlements "$ROOT/Sieve.entitlements" \
+  --sign "$IDENTITY" --identifier "com.saikiran.$NAME" "$APP" 2>/dev/null \
+  || codesign --force --deep --options=runtime \
+       --entitlements "$ROOT/Sieve.entitlements" \
+       --sign - --identifier "com.saikiran.$NAME" "$APP" 2>/dev/null
 
 rm -f "$ROOT/Sieve.entitlements"
 
 codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "^(Identifier|Signature|CodeDirectory)" | sed 's/^/  /'
 echo "✓ Built $APP  (version $VERSION, build $BUILD)"
+echo "  signed with: $IDENTITY_NAME"
+if [ "$IDENTITY" = "-" ]; then
+  echo "  note: an ad-hoc build shows the \"Apple could not verify\" dialog on any Mac it is"
+  echo "        downloaded to, including this one. See NOTARISING.md."
+fi

@@ -218,13 +218,19 @@ struct LibraryView: View {
             Text("\(selected.count) selected").font(D.small.weight(.medium))
             Spacer()
             Menu {
-                Button("Review root (no folder)") { store.move(Array(selected), toFolder: nil); selected = [] }
-                Divider()
-                ForEach(store.folders) { f in
-                    Button(folderPath(f)) { store.move(Array(selected), toFolder: f.id); selected = [] }
+                ForEach(store.folders.filter { !$0.isSmart }) { f in
+                    Button(folderPath(f)) { store.addToCollection(Array(selected), f.id); selected = [] }
                 }
-            } label: { Label("Move to folder", systemImage: "folder") }
-                .frame(width: 150)
+                if store.folders.allSatisfy(\.isSmart) {
+                    Text("No collections yet — make one in the sidebar")
+                }
+                Divider()
+                Text("A paper can be in several collections. Adding never removes it from another.")
+                Button("Take out of every collection") {
+                    store.move(Array(selected), toFolder: nil); selected = []
+                }
+            } label: { Label("Add to collection", systemImage: "folder.badge.plus") }
+                .frame(width: 170)
             Button("Send to screening") { selected.forEach { store.setStage($0, .screening) }; selected = [] }
             Button("Mark included") { selected.forEach { store.setStage($0, .included) }; selected = [] }
             Button("Fetch free PDFs") {
@@ -300,53 +306,87 @@ enum LibrarySelection: Hashable {
     case all, unfiled, folder(Int)
 }
 
+/// The collection tree. Collections are labels, not locations: filing a paper never moves a
+/// file, a paper can sit in several at once, and removing it from one leaves it everywhere
+/// else — the way Zotero works, and the way a review actually thinks.
 struct FolderTree: View {
     @Binding var selected: LibrarySelection
     var moveTarget: (Int?) -> Void
     @EnvironmentObject var store: Store
     @State private var expanded: Set<Int> = []
     @State private var renaming: Folder? = nil
+    @State private var showSmartPicker = false
+
+    private var smart: [Folder] { store.folders.filter(\.isSmart) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                SectionLabel(text: "Folders")
-                Spacer()
-                Button { create(parent: nil) } label: { Image(systemName: "folder.badge.plus") }
-                    .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .help("New folder in this review")
-            }
-            .padding(.horizontal, D.s3).padding(.vertical, D.s2)
-
             List {
-                row(.all, "All papers", "tray.full", store.papers.count, depth: 0, folder: nil)
-                row(.unfiled, "Unfiled", "tray", store.papers.filter { $0.folderId == nil }.count,
-                    depth: 0, folder: nil)
-                if !store.folders.isEmpty {
-                    SwiftUI.Section {
+                // The root: the review itself. Everything lives here; collections are ways
+                // of looking at it, not places it is kept.
+                SwiftUI.Section {
+                    row(.all,
+                        store.project?.name ?? "This review",
+                        "tray.full.fill",
+                        store.papers.count,
+                        depth: 0, folder: nil, isRoot: true)
+                    row(.unfiled, "Not in any collection", "tray",
+                        store.unfiled.count, depth: 1, folder: nil)
+                }
+
+                if !smart.isEmpty {
+                    SwiftUI.Section("Fills itself") {
+                        ForEach(smart) { f in
+                            row(.folder(f.id), f.name, f.symbol,
+                                store.papers(inFolder: f.id).count,
+                                depth: 0, folder: f)
+                        }
+                    }
+                }
+
+                SwiftUI.Section {
+                    if store.folders.contains(where: { !$0.isSmart }) {
                         ForEach(visibleFolders, id: \.folder.id) { item in
                             row(.folder(item.folder.id), item.folder.name,
-                                store.children(of: item.folder.id).isEmpty ? "folder" : "folder.fill",
+                                store.children(of: item.folder.id).contains(where: { !$0.isSmart })
+                                    ? "folder.fill" : "folder",
                                 store.papers(inFolder: item.folder.id).count,
                                 depth: item.depth, folder: item.folder)
                         }
+                    } else {
+                        Text("No collections yet. They're labels, not folders — a paper can be in several at once and nothing moves on disk.")
+                            .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.vertical, 4)
+                    }
+                } header: {
+                    HStack {
+                        Text("Collections")
+                        Spacer()
+                        Menu {
+                            Button("New collection…") { create(parent: nil) }
+                            Button("Collection that fills itself…") { showSmartPicker = true }
+                        } label: { Image(systemName: "plus") }
+                            .menuStyle(.borderlessButton).frame(width: 22)
                     }
                 }
             }
             .listStyle(.sidebar)
 
-            Text("Right-click a folder to rename it, add a sub-folder, or move the selected papers into it.")
+            Text("Filing a paper never moves the file. A paper can be in several collections.")
                 .font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(D.s3)
         }
         .sheet(item: $renaming) { f in RenameFolderSheet(folder: f) { renaming = nil } }
+        .sheet(isPresented: $showSmartPicker) { SmartCollectionSheet { showSmartPicker = false } }
     }
 
-    /// Depth-first walk of the folder tree, skipping the children of collapsed folders.
+    /// Depth-first walk of the hand-made collections, skipping collapsed children.
     private var visibleFolders: [(folder: Folder, depth: Int)] {
         var out: [(Folder, Int)] = []
         func walk(_ parent: Int?, _ depth: Int) {
-            for f in store.children(of: parent) {
+            for f in store.children(of: parent) where !f.isSmart {
                 out.append((f, depth))
                 if expanded.contains(f.id) { walk(f.id, depth + 1) }
             }
@@ -356,9 +396,9 @@ struct FolderTree: View {
     }
 
     private func row(_ sel: LibrarySelection, _ name: String, _ icon: String, _ count: Int,
-                     depth: Int, folder: Folder?) -> some View {
+                     depth: Int, folder: Folder?, isRoot: Bool = false) -> some View {
         HStack(spacing: 5) {
-            if let f = folder, !store.children(of: f.id).isEmpty {
+            if let f = folder, !f.isSmart, store.children(of: f.id).contains(where: { !$0.isSmart }) {
                 Button {
                     if expanded.contains(f.id) { expanded.remove(f.id) } else { expanded.insert(f.id) }
                 } label: {
@@ -370,38 +410,51 @@ struct FolderTree: View {
                 Spacer().frame(width: 10)
             }
             Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundStyle(folder.map { $0.color } ?? Color.secondary)
-            Text(name).font(D.small).lineLimit(1)
+                .font(.system(size: isRoot ? 12 : 11))
+                .foregroundStyle(isRoot ? Palette.accent : (folder.map { $0.color } ?? Color.secondary))
+            Text(name)
+                .font(isRoot ? D.small.weight(.semibold) : D.small)
+                .lineLimit(1)
             Spacer()
             Text("\(count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
         }
         .padding(.leading, CGFloat(depth) * 12)
-        .padding(.vertical, 2)
+        .padding(.vertical, isRoot ? 3 : 2)
         .contentShape(Rectangle())
         .listRowBackground(selected == sel ? Palette.accent.opacity(0.14) : Color.clear)
         .onTapGesture { selected = sel }
         .contextMenu {
             if let f = folder {
-                Button("New sub-folder…") { create(parent: f.id) }
-                Button("Rename / recolour…") { renaming = f }
-                Button("Move selected papers here") { moveTarget(f.id) }
-                Divider()
-                Button("Delete folder", role: .destructive) {
-                    store.deleteFolder(f.id)
-                    if selected == .folder(f.id) { selected = .all }
+                if f.isSmart {
+                    Text(f.smartRule?.blurb ?? "")
+                    Divider()
+                    Button("Rename / recolour…") { renaming = f }
+                    Button("Delete", role: .destructive) {
+                        store.deleteFolder(f.id)
+                        if selected == .folder(f.id) { selected = .all }
+                    }
+                } else {
+                    Button("New sub-collection…") { create(parent: f.id) }
+                    Button("Rename / recolour…") { renaming = f }
+                    Button("Add selected papers here") { moveTarget(f.id) }
+                    Divider()
+                    Button("Delete collection", role: .destructive) {
+                        store.deleteFolder(f.id)
+                        if selected == .folder(f.id) { selected = .all }
+                    }
+                    Text("Deleting a collection removes the label only — the papers and their files stay.")
                 }
             } else {
-                Button("New folder…") { create(parent: nil) }
-                if case .unfiled = sel { Button("Move selected papers here") { moveTarget(nil) } }
+                Button("New collection…") { create(parent: nil) }
+                Button("Collection that fills itself…") { showSmartPicker = true }
             }
         }
     }
 
     private func create(parent: Int?) {
         let alert = NSAlert()
-        alert.messageText = parent == nil ? "New folder" : "New sub-folder"
-        alert.informativeText = "Folders group the papers inside this review. Nothing is moved on disk."
+        alert.messageText = parent == nil ? "New collection" : "New sub-collection"
+        alert.informativeText = "A collection is a label on a paper, not a place it is stored. Nothing moves on disk, and a paper can be in as many as you like."
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
         field.placeholderString = "e.g. Chapter 2 — tactile perception"
         alert.accessoryView = field
@@ -414,6 +467,79 @@ struct FolderTree: View {
             if let parent { expanded.insert(parent) }
             selected = .folder(id)
         }
+    }
+}
+
+/// Collections that maintain themselves from the screening decisions you already made.
+struct SmartCollectionSheet: View {
+    var done: () -> Void
+    @EnvironmentObject var store: Store
+    @State private var chosen: Set<SmartRule> = []
+
+    private var existing: Set<SmartRule> {
+        Set(store.folders.compactMap(\.smartRule))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: D.s4) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Collections that fill themselves").font(D.title)
+                Text("Screening already sorts your papers. These turn that into collections you never have to file by hand — a paper appears the moment its decision matches, and leaves if you change your mind.")
+                    .font(D.small).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(spacing: 5) {
+                ForEach(SmartRule.allCases) { rule in
+                    let already = existing.contains(rule)
+                    Button {
+                        guard !already else { return }
+                        if chosen.contains(rule) { chosen.remove(rule) } else { chosen.insert(rule) }
+                    } label: {
+                        HStack(spacing: D.s3) {
+                            Image(systemName: already ? "checkmark.circle.fill"
+                                  : (chosen.contains(rule) ? "largecircle.fill.circle" : "circle"))
+                                .foregroundStyle(already ? Palette.emerald
+                                                 : (chosen.contains(rule) ? Palette.accent : Color.secondary.opacity(0.4)))
+                            Image(systemName: rule.icon).frame(width: 16).foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(rule.label).font(D.body.weight(.medium))
+                                Text(rule.blurb).font(D.small).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(matchCount(rule))")
+                                .font(D.small.monospacedDigit()).foregroundStyle(.tertiary)
+                            if already { Text("added").font(.system(size: 10)).foregroundStyle(.tertiary) }
+                        }
+                        .padding(D.s2)
+                        .background(chosen.contains(rule) ? Palette.accent.opacity(0.07) : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(already ? 0.55 : 1)
+                }
+            }
+            HStack {
+                Spacer()
+                Button("Cancel", action: done).keyboardShortcut(.cancelAction)
+                Button("Add \(chosen.count == 1 ? "collection" : "\(chosen.count) collections")") {
+                    for rule in SmartRule.allCases where chosen.contains(rule) {
+                        store.addFolder(name: rule.label, parent: nil,
+                                        color: Palette.accent.hexString, rule: rule)
+                    }
+                    done()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(chosen.isEmpty)
+            }
+        }
+        .padding(D.s5).frame(width: 560)
+    }
+
+    private func matchCount(_ rule: SmartRule) -> Int {
+        store.papers.filter { p in
+            rule.matches(p, evidenceCount: store.evidence.filter { $0.paperId == p.id }.count)
+        }.count
     }
 }
 
@@ -491,7 +617,7 @@ struct PaperRow: View {
 
                 HStack(spacing: 5) {
                     StageBadge(stage: paper.stage)
-                    if let f = store.folder(paper.folderId) {
+                    ForEach(store.collections(of: paper.id)) { f in
                         Chip(text: f.name, color: f.color, icon: "folder")
                     }
                     if !paper.sourceDB.isEmpty { Chip(text: paper.sourceDB, color: Palette.slate) }
@@ -558,10 +684,15 @@ struct PaperRow: View {
                             NSPasteboard.general.setString(paper.reference, forType: .string)
                             store.flash("Reference copied")
                         }
-                        Menu("Move to folder") {
-                            Button("Review root") { store.move([paper.id], toFolder: nil) }
-                            ForEach(store.folders) { f in
-                                Button(f.name) { store.move([paper.id], toFolder: f.id) }
+                        Menu("Collections") {
+                            ForEach(store.folders.filter { !$0.isSmart }) { f in
+                                Button(store.isIn(paper.id, folder: f.id) ? "✓ \(f.name)" : f.name) {
+                                    if store.isIn(paper.id, folder: f.id) {
+                                        store.removeFromCollection([paper.id], f.id)
+                                    } else {
+                                        store.addToCollection([paper.id], f.id)
+                                    }
+                                }
                             }
                         }
                         Menu("Move to stage") {

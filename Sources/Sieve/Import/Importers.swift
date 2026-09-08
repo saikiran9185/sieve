@@ -121,25 +121,29 @@ enum Importers {
         // time for Crossref and PubMed records.
         if meta.abstract.isEmpty { meta.abstract = sections.abstract }
 
-        let safeName = (meta.title.isEmpty ? url.deletingPathExtension().lastPathComponent : meta.title)
-            .prefix(60)
-            .replacingOccurrences(of: "[^A-Za-z0-9 ]", with: "", options: .regularExpression)
-            .replacingOccurrences(of: " ", with: "_")
-        var dest = Library.pdfDir.appendingPathComponent("\(safeName).pdf")
-        var n = 2
-        while FileManager.default.fileExists(atPath: dest.path) {
-            dest = Library.pdfDir.appendingPathComponent("\(safeName)-\(n).pdf"); n += 1
-        }
-        do { try FileManager.default.copyItem(at: url, to: dest) }
-        catch { store.flash("Could not copy PDF: \(error.localizedDescription)"); return nil }
-
-        // An identical record may already be in the review from a database search — in that
-        // case attach the PDF and top up whatever fields were thin, rather than duplicating.
+        // Everything below happens BEFORE anything is written to disk. The old order — copy
+        // first, then look for an existing record — is what produced 126 duplicate files in
+        // a real library: every re-drop wrote another `-N` copy and orphaned the last one.
         let key = Dedupe.key(doi: meta.doi, title: meta.title, year: meta.year)
+        let fingerprint = Library.fingerprint(of: url)
+
+        // The same bytes already in the library, under any record.
+        if let hash = fingerprint,
+           let twin = store.papers.first(where: { $0.fileHash == hash && $0.hasPDF }) {
+            store.flash("Already in this review as “\(twin.title.prefix(40))…” — nothing copied")
+            return twin.id
+        }
+
         if let existing = store.papers.first(where: { $0.dedupeKey == key }) {
+            // The record is here already. Only bring in the file if it has none, and top up
+            // whatever fields were thin.
             var q = existing
-            q.pdfPath = dest.path
-            q.accessedAt = Date()
+            if !existing.hasPDF {
+                guard let placed = copyIntoLibrary(url, title: meta.title, store: store) else { return nil }
+                q.pdfPath = placed.path
+                q.accessedAt = Date()
+                q.fileHash = fingerprint ?? ""
+            }
             if q.abstract.isEmpty { q.abstract = meta.abstract }
             if q.venue.isEmpty { q.venue = meta.venue }
             if q.doi.isEmpty { q.doi = meta.doi }
@@ -154,15 +158,21 @@ enum Importers {
                 q.conclusionHeading = sections.conclusionHeading
             }
             store.updatePaper(q)
-            store.flash("Attached the PDF to “\(q.title.prefix(40))…” already in this review")
+            store.flash(existing.hasPDF
+                        ? "Already in this review — details topped up, no copy made"
+                        : "Attached the PDF to “\(q.title.prefix(36))…” already in this review")
             return q.id
         }
+
+        guard let dest = copyIntoLibrary(url, title: meta.title, store: store) else { return nil }
 
         guard let id = store.addManualPaper(title: meta.title, authors: meta.authors, year: meta.year,
                                             venue: meta.venue, doi: meta.doi, pdfPath: dest.path,
                                             sourceDB: "Dropped PDF", abstract: meta.abstract,
-                                            url: meta.url) else { return nil }
-        // The richer OpenAlex fields aren't part of addManualPaper's signature; write them now.
+                                            url: meta.url) else {
+            try? FileManager.default.removeItem(at: dest)   // no record kept it; do not leave the file
+            return nil
+        }
         if var p = store.paper(id) {
             p.sdgs = meta.sdgs
             p.pubDate = meta.pubDate
@@ -172,9 +182,38 @@ enum Importers {
             p.keywords = sections.keywords
             p.extractedConclusion = sections.conclusion
             p.conclusionHeading = sections.conclusionHeading
+            p.fileHash = fingerprint ?? ""
             store.updatePaper(p)
         }
         return id
+    }
+
+    /// Copies a PDF into the folder belonging to the review that is open. Each review owns
+    /// its own directory, so one review's papers are never mixed with another's.
+    @MainActor
+    private static func copyIntoLibrary(_ url: URL, title: String, store: Store) -> URL? {
+        guard let project = store.project else { return nil }
+        let dir = Library.pdfDir(id: project.id, name: project.name)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let stem = (title.isEmpty ? url.deletingPathExtension().lastPathComponent : title)
+            .prefix(60)
+            .replacingOccurrences(of: "[^A-Za-z0-9 ]", with: "", options: .regularExpression)
+            .replacingOccurrences(of: " +", with: "_", options: .regularExpression)
+        let base = stem.isEmpty ? "paper" : stem
+
+        var dest = dir.appendingPathComponent("\(base).pdf")
+        var n = 2
+        while FileManager.default.fileExists(atPath: dest.path) {
+            dest = dir.appendingPathComponent("\(base)-\(n).pdf"); n += 1
+        }
+        do {
+            try FileManager.default.copyItem(at: url, to: dest)
+            return dest
+        } catch {
+            store.flash("Could not copy the PDF: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Looks the paper up online. DOI is tried first because it is exact; a title search is

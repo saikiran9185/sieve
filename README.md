@@ -33,12 +33,14 @@ No account, no server, no subscription.
    Scholar and BASE actively block automated querying, and scraping Scholar breaks its terms
    of service. Sieve opens your search there in the browser and takes the `.bib`/`.ris` you
    export straight back in.
-3. **Library** — everything you've collected, in nested **folders** you make yourself. A
+3. **Library** — everything you've collected, in nested **collections** you make yourself. A
    source is a paper, website, book, chapter, report, thesis, interview, image, video or
    dataset — an interview transcript and a journal article sit in the same corpus.
    Filter by stage, year, author, SDG, PDF status or starred. Drop PDFs anywhere in the
-   window and Sieve reads the DOI off page one and pulls the full record — title, authors,
-   abstract, citations — from OpenAlex. Import `.bib` / `.ris` from Zotero, Mendeley or
+   window — a whole folder of them works too — and Sieve reads the DOI off page one and pulls
+   the full record — title, authors, abstract, citations — from OpenAlex. Dropping the same
+   paper twice does nothing: records are matched by DOI and files by content, so neither is
+   ever stored twice. Import `.bib` / `.ris` from Zotero, Mendeley or
    Google Scholar. Run duplicate detection. **Fill in missing details** backfills abstracts,
    SDGs and citation lists for anything added before those fields existed.
 4. **Screening** — a list on the left, the record in the middle, and the decision pinned to
@@ -228,6 +230,32 @@ deduplication, the BibTeX/RIS parsing, the PDF section extraction, the PRISMA co
 every exporter are plain Swift with no Apple dependencies. Swift runs on Windows and Linux,
 so a cross-platform command-line tool or a web front end over that core is a realistic
 project for someone who wants it. Open an issue if that is you.
+
+## Collections, not folders
+
+A collection is a label on a paper, not a place it is kept — the way Zotero works. Filing a
+paper never moves a file, the same paper can sit in several collections at once, and deleting
+a collection removes the label and nothing else.
+
+Some collections fill themselves from decisions you have already made: **Included**,
+**Excluded**, **Still to screen**, **Needs the full text**, **Read but not yet coded**,
+**No conclusion recorded**. A paper appears the moment its stage matches and leaves if you
+change your mind, so screening does the filing for you.
+
+On disk it is simpler than that: each review owns one folder.
+
+```
+~/Documents/Sieve/
+├── sieve.sqlite
+├── Exports/
+└── Reviews/
+    ├── my-scoping-review-1/PDFs/
+    └── cosmetic-packaging-3/PDFs/
+```
+
+Paths are stored **relative to the library root**, so you can move the whole library to an
+external drive or a synced folder — Settings → Library → Move — without breaking a single
+record.
 
 ## Proof, not intention
 

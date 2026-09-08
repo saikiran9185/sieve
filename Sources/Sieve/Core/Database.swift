@@ -53,6 +53,17 @@ enum Schema {
         );
         CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id);
 
+        -- A paper can sit in several collections at once, the way it can in Zotero. The
+        -- collection is a label on the record, never a location: nothing is moved on disk
+        -- when you file a paper, and removing it from a collection never deletes anything.
+        CREATE TABLE IF NOT EXISTS paper_folders (
+            paper_id INTEGER NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+            folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+            added_at REAL NOT NULL DEFAULT 0,
+            PRIMARY KEY (paper_id, folder_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pf_folder ON paper_folders(folder_id);
+
         CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -178,6 +189,10 @@ enum Schema {
             ("evidence", "stance", "TEXT NOT NULL DEFAULT 'evidence'"),
             ("evidence", "confidence", "TEXT NOT NULL DEFAULT 'medium'"),
             ("evidence", "verification", "TEXT NOT NULL DEFAULT 'unchecked'"),
+            // A smart collection has a rule instead of members; it fills itself.
+            ("folders", "rule", "TEXT NOT NULL DEFAULT ''"),
+            ("folders", "icon", "TEXT NOT NULL DEFAULT ''"),
+            ("papers", "file_hash", "TEXT NOT NULL DEFAULT ''"),
         ]
         for (table, column, type) in later {
             try? db.execute("ALTER TABLE \(table) ADD COLUMN \(column) \(type);")
@@ -186,6 +201,13 @@ enum Schema {
         // Tags used to have one axis called "category"; it is now the "type" axis, sitting
         // alongside theme, status and data type.
         try? db.execute("UPDATE tags SET kind='type' WHERE kind='category';")
+
+        // Folders used to be a single column on the paper, so a paper could only be in one.
+        // Carry those memberships into the join table that replaces it.
+        try? db.execute("""
+            INSERT OR IGNORE INTO paper_folders (paper_id, folder_id, added_at)
+            SELECT id, folder_id, added_at FROM papers WHERE folder_id IS NOT NULL;
+            """)
     }
 
     /// Categories every new review starts with. They're only defaults — the point of
@@ -340,18 +362,105 @@ enum PrismaChecklist {
 }
 
 /// Where everything lives on disk.
+///
+/// Two things are separated deliberately:
+///
+/// **Physical layout** — each review owns a directory, so one review's PDFs are never mixed
+/// with another's and a whole review can be zipped, moved or handed over on its own.
+///
+/// **Stored paths** — a paper records where its PDF sits *relative to the library root*, so
+/// moving the library to an external drive or iCloud does not break every record in it.
 enum Library {
+    private static let locationKey = "sieve.libraryRoot"
+
+    /// The library root. Defaults to ~/Documents/Sieve; the user can put it anywhere.
     static var root: URL {
+        if let saved = UserDefaults.standard.string(forKey: locationKey), !saved.isEmpty {
+            return URL(fileURLWithPath: saved, isDirectory: true)
+        }
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return base.appendingPathComponent("Sieve", isDirectory: true)
     }
+
+    static var isCustomLocation: Bool {
+        !(UserDefaults.standard.string(forKey: locationKey) ?? "").isEmpty
+    }
+
+    static func setRoot(_ url: URL) {
+        UserDefaults.standard.set(url.path, forKey: locationKey)
+    }
+
+    static func resetRoot() {
+        UserDefaults.standard.removeObject(forKey: locationKey)
+    }
+
     static var databaseURL: URL { root.appendingPathComponent("sieve.sqlite") }
-    static var pdfDir: URL { root.appendingPathComponent("PDFs", isDirectory: true) }
+    static var reviewsDir: URL { root.appendingPathComponent("Reviews", isDirectory: true) }
     static var exportDir: URL { root.appendingPathComponent("Exports", isDirectory: true) }
 
+    /// The shared folder used before reviews had their own. Kept so old records resolve.
+    static var legacyPDFDir: URL { root.appendingPathComponent("PDFs", isDirectory: true) }
+    static var pdfDir: URL { legacyPDFDir }
+
+    /// A review's own directory, named so it is recognisable in Finder but stable under
+    /// renaming — the id is what actually identifies it.
+    static func reviewDir(id: Int, name: String) -> URL {
+        let slug = name
+            .replacingOccurrences(of: "[^A-Za-z0-9 ]", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: " +", with: "-", options: .regularExpression)
+            .lowercased()
+        let stem = slug.isEmpty ? "review" : String(slug.prefix(50))
+        return reviewsDir.appendingPathComponent("\(stem)-\(id)", isDirectory: true)
+    }
+
+    static func pdfDir(id: Int, name: String) -> URL {
+        reviewDir(id: id, name: name).appendingPathComponent("PDFs", isDirectory: true)
+    }
+
+    // MARK: Relative paths
+
+    /// Turns an absolute path inside the library into one stored relative to the root.
+    /// Files outside the library keep their absolute path — someone may deliberately point
+    /// at a PDF that lives elsewhere.
+    static func relative(_ absolute: String) -> String {
+        guard !absolute.isEmpty else { return "" }
+        let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        guard absolute.hasPrefix(rootPath) else { return absolute }
+        return String(absolute.dropFirst(rootPath.count))
+    }
+
+    /// Resolves a stored path back to somewhere on disk.
+    static func absolute(_ stored: String) -> String {
+        guard !stored.isEmpty else { return "" }
+        if stored.hasPrefix("/") { return stored }
+        return root.appendingPathComponent(stored).path
+    }
+
     static func prepare() throws {
-        for dir in [root, pdfDir, exportDir] {
+        for dir in [root, reviewsDir, exportDir] {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
+    }
+
+    static func prepare(reviewId: Int, name: String) throws {
+        try FileManager.default.createDirectory(at: pdfDir(id: reviewId, name: name),
+                                                withIntermediateDirectories: true)
+    }
+
+    /// A short content fingerprint, used so the same PDF is never stored twice.
+    static func fingerprint(of url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) as? Int ?? 0
+        // The first 256 KB plus the byte count identifies a PDF well enough to catch a
+        // re-drop of the same file, without reading a 50 MB document to find out.
+        let head = (try? handle.read(upToCount: 256 * 1024)) ?? Data()
+        guard !head.isEmpty else { return nil }
+        var hash: UInt64 = 1469598103934665603
+        for byte in head {
+            hash = (hash ^ UInt64(byte)) &* 1099511628211
+        }
+        return String(format: "%016llx-%d", hash, size)
     }
 }

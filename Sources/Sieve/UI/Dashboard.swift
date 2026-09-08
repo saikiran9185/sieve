@@ -313,6 +313,59 @@ struct SettingsView: View {
 
     @State private var engineRefresh = 0
     @State private var appearanceTick = 0
+    @State private var libraryTick = 0
+
+    /// Moves the whole library. Paths are relative to the root, so nothing inside changes.
+    private func relocate() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Move library here"
+        panel.message = "Choose a folder to hold the Sieve library"
+        guard panel.runModal() == .OK, let dir = panel.url else { return }
+        let dest = dir.appendingPathComponent("Sieve", isDirectory: true)
+        do {
+            try LibraryMigration.relocate(to: dest, store: store)
+            libraryTick += 1
+            let alert = NSAlert()
+            alert.messageText = "Library moved"
+            alert.informativeText = "It now lives at \(dest.path). Quit and reopen Sieve to load it from there."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        } catch {
+            store.flash("Could not move the library: \(error.localizedDescription)")
+        }
+    }
+
+    /// Sorts shared PDFs into per-review folders and reports whatever is left over.
+    private func tidy() {
+        let report = LibraryMigration.run(store)
+        libraryTick += 1
+        let alert = NSAlert()
+        alert.messageText = "Library sorted"
+        var lines: [String] = []
+        if report.moved > 0 { lines.append("Moved \(report.moved) PDFs into their own review's folder.") }
+        if report.alreadyPlaced > 0 { lines.append("\(report.alreadyPlaced) were already in the right place.") }
+        if report.missing > 0 { lines.append("\(report.missing) records pointed at files that are gone; those links were cleared.") }
+        if !report.orphans.isEmpty {
+            let mb = Double(report.orphanBytes) / 1024 / 1024
+            lines.append("")
+            lines.append(String(format: "%d files are left that no record points at (%.0f MB). These are the duplicates an older build made when the same PDF was dropped more than once.", report.orphans.count, mb))
+        }
+        alert.informativeText = lines.joined(separator: "\n")
+        if report.orphans.isEmpty {
+            alert.addButton(withTitle: "Done")
+            alert.runModal()
+        } else {
+            alert.addButton(withTitle: "Move them to the Trash")
+            alert.addButton(withTitle: "Leave them")
+            if alert.runModal() == .alertFirstButtonReturn {
+                for file in report.orphans { try? FileManager.default.trashItem(at: file, resultingItemURL: nil) }
+                store.flash("Moved \(report.orphans.count) unreferenced files to the Trash")
+            }
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -475,13 +528,47 @@ struct SettingsView: View {
 
                 group("Library") {
                     labelled("Location") {
-                        HStack {
-                            Text(Library.root.path).font(D.mono).textSelection(.enabled)
-                            Button("Reveal") { NSWorkspace.shared.open(Library.root) }
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack {
+                                Text(Library.root.path).font(D.mono).textSelection(.enabled).lineLimit(1)
+                                Button("Reveal") { NSWorkspace.shared.open(Library.root) }
+                                Button("Move…") { relocate() }
+                                if Library.isCustomLocation {
+                                    Button("Reset") {
+                                        Library.resetRoot(); libraryTick += 1
+                                        store.flash("Back to ~/Documents/Sieve — restart Sieve to load it")
+                                    }
+                                }
+                            }
+                            Text("Put the library on an external drive or in a synced folder. Paths are stored relative to this folder, so moving it doesn't break any record.")
+                                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    Text("One folder holds the database and every PDF. Copy it to back up or move a whole review.")
-                        .font(D.small).foregroundStyle(.secondary)
+                    labelled("How it is arranged") {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Reviews/<review name>/PDFs/ — one folder per review")
+                                .font(D.mono)
+                            Text("Collections inside a review are labels, not folders. Filing a paper never moves a file, so the same paper can sit in several collections at once.")
+                                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if LibraryMigration.needsMigration(store) {
+                        HStack(alignment: .top, spacing: D.s2) {
+                            Image(systemName: "shippingbox").foregroundStyle(Palette.amber)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("PDFs from every review are still in one shared folder")
+                                    .font(D.body.weight(.medium))
+                                Text("Sorting them into per-review folders also finds files that no record points at — early builds copied a new one every time the same PDF was dropped.")
+                                    .font(D.small).foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                            Button("Sort them out…") { tidy() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    }
                     HStack {
                         Button("Export everything into one folder…") { Exporters.exportEverything(store) }
                             .buttonStyle(.borderedProminent)

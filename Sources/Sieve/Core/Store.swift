@@ -11,6 +11,7 @@ final class Store: ObservableObject {
     @Published var papers: [Paper] = []
     @Published var folders: [Folder] = []
     @Published var relations: [Relation] = []
+    @Published var membership: [Int: Set<Int>] = [:]
     @Published var methods: [Method] = []
     @Published var prismaCounts: [String: Int] = [:]
     @Published var checklist: [String: (state: String, location: String)] = [:]
@@ -150,6 +151,7 @@ final class Store: ObservableObject {
     func reloadAll() {
         reloadTags(); reloadFolders(); reloadPapers(); reloadColumns(); reloadEvidence()
         reloadCells(); reloadRelations(); reloadMethods(); reloadPrismaCounts(); reloadChecklist()
+        reloadMembership()
     }
 
     // MARK: - Papers
@@ -172,7 +174,7 @@ final class Store: ObservableObject {
               abstract: r.string("abstract") ?? "",
               url: r.string("url") ?? "",
               pdfURL: r.string("pdf_url") ?? "",
-              pdfPath: r.string("pdf_path") ?? "",
+              pdfPath: Library.absolute(r.string("pdf_path") ?? ""),
               sourceDB: r.string("source_db") ?? "",
               sourceQuery: r.string("source_query") ?? "",
               oaStatus: r.string("oa_status") ?? "",
@@ -185,6 +187,7 @@ final class Store: ObservableObject {
               starred: r.bool("starred"),
               dedupeKey: r.string("dedupe_key") ?? "",
               folderId: r.int("folder_id"),
+              fileHash: r.string("file_hash") ?? "",
               conclusion: r.string("conclusion") ?? "",
               toRead: r.string("to_read") ?? "",
               sdgs: (r.string("sdgs") ?? "").split(separator: "|").map(String.init),
@@ -201,6 +204,18 @@ final class Store: ObservableObject {
     }
 
     func paper(_ id: Int) -> Paper? { papers.first { $0.id == id } }
+
+    /// Every paper in a review, whether or not it is the one on screen. The migration needs
+    /// to walk all reviews, not only the open one.
+    func papersRaw(projectId: Int) -> [Paper] {
+        (try? db.query("SELECT * FROM papers WHERE project_id=?", [projectId]).map(Store.paper(from:))) ?? []
+    }
+
+    func clearPDFPath(_ paperId: Int) {
+        do {
+            try db.run("UPDATE papers SET pdf_path='' WHERE id=?", [paperId])
+        } catch { fail(error, "Clearing a missing file") }
+    }
 
     /// Insert a search hit. Returns nil when it is already in this review (dedupe by DOI, else title+year).
     @discardableResult
@@ -261,14 +276,15 @@ final class Store: ObservableObject {
                                   pdf_path=?, stage=?, exclude_reason=?, notes=?, starred=?, accessed_at=?,
                                   folder_id=?, conclusion=?, to_read=?, sdgs=?, pub_date=?, doc_type=?,
                                   language=?, openalex_id=?, refs=?, source_type=?, keywords=?,
-                                  extracted_conclusion=?, conclusion_heading=?, report_count=?
+                                  extracted_conclusion=?, conclusion_heading=?, report_count=?,
+                                  file_hash=?
                 WHERE id=?
                 """, [p.title, p.authors.joined(separator: "\n"), p.year, p.venue, p.doi, p.abstract, p.url,
-                      p.pdfURL, p.pdfPath, p.stage.rawValue, p.excludeReason, p.notes, p.starred,
+                      p.pdfURL, Library.relative(p.pdfPath), p.stage.rawValue, p.excludeReason, p.notes, p.starred,
                       p.accessedAt, p.folderId, p.conclusion, p.toRead, p.sdgs.joined(separator: "|"),
                       p.pubDate, p.docType, p.language, p.openAlexId, p.references.joined(separator: " "),
                       p.sourceType.rawValue, p.keywords.joined(separator: "|"),
-                      p.extractedConclusion, p.conclusionHeading, p.reportCount,
+                      p.extractedConclusion, p.conclusionHeading, p.reportCount, p.fileHash,
                       p.id])
             reloadPapers()
         } catch { fail(error, "Saving paper") }
@@ -285,7 +301,8 @@ final class Store: ObservableObject {
         do {
             if let old = paper(paperId)?.pdfPath { PDFVault.invalidate(old) }
             PDFVault.invalidate(path)
-            try db.run("UPDATE papers SET pdf_path=?, accessed_at=? WHERE id=?", [path, Date(), paperId])
+            try db.run("UPDATE papers SET pdf_path=?, accessed_at=? WHERE id=?",
+                       [Library.relative(path), Date(), paperId])
             reloadPapers()
         } catch { fail(error, "Attaching PDF") }
     }
@@ -337,20 +354,79 @@ final class Store: ObservableObject {
                                    [currentProjectId]).map {
                 Folder(id: $0.int("id") ?? 0, projectId: $0.int("project_id") ?? 0,
                        parentId: $0.int("parent_id"), name: $0.string("name") ?? "",
-                       colorHex: $0.string("color") ?? "#8A93A3", sortOrder: $0.int("sort_order") ?? 0)
+                       colorHex: $0.string("color") ?? "#8A93A3", sortOrder: $0.int("sort_order") ?? 0,
+                       rule: $0.string("rule") ?? "", icon: $0.string("icon") ?? "")
             }
         } catch { fail(error, "Loading folders") }
     }
 
     func folder(_ id: Int?) -> Folder? { id.flatMap { fid in folders.first { $0.id == fid } } }
 
+    /// Which collections a paper belongs to. A paper can be in several at once.
+    func collections(of paperId: Int) -> [Folder] {
+        let ids = membership[paperId] ?? []
+        return folders.filter { ids.contains($0.id) && !$0.isSmart }
+    }
+
+    func isIn(_ paperId: Int, folder id: Int) -> Bool {
+        if let f = folder(id), let rule = f.smartRule {
+            guard let p = paper(paperId) else { return false }
+            let n = evidence.filter { $0.paperId == paperId }.count
+            return rule.matches(p, evidenceCount: n)
+        }
+        return membership[paperId]?.contains(id) ?? false
+    }
+
+    func addToCollection(_ paperIds: [Int], _ folderId: Int) {
+        guard let f = folder(folderId), !f.isSmart else {
+            flash("That collection fills itself — its rule decides what is in it")
+            return
+        }
+        do {
+            for pid in paperIds {
+                try db.run("INSERT OR IGNORE INTO paper_folders (paper_id, folder_id, added_at) VALUES (?,?,?)",
+                           [pid, folderId, Date()])
+            }
+            reloadMembership()
+        } catch { fail(error, "Filing papers") }
+    }
+
+    /// Removes the label only. The paper stays in the review and the file stays on disk.
+    func removeFromCollection(_ paperIds: [Int], _ folderId: Int) {
+        do {
+            for pid in paperIds {
+                try db.run("DELETE FROM paper_folders WHERE paper_id=? AND folder_id=?", [pid, folderId])
+            }
+            reloadMembership()
+        } catch { fail(error, "Removing from collection") }
+    }
+
+    func reloadMembership() {
+        do {
+            var map: [Int: Set<Int>] = [:]
+            for r in try db.query("""
+                SELECT pf.paper_id AS p, pf.folder_id AS f FROM paper_folders pf
+                JOIN papers pa ON pa.id = pf.paper_id WHERE pa.project_id=?
+                """, [currentProjectId]) {
+                map[r.int("p") ?? 0, default: []].insert(r.int("f") ?? 0)
+            }
+            membership = map
+        } catch { fail(error, "Loading collections") }
+    }
+
     func children(of parent: Int?) -> [Folder] {
         folders.filter { $0.parentId == parent }
     }
 
-    /// Papers in a folder, optionally including everything in its sub-folders.
+    /// Papers in a collection, including everything in its sub-collections. A smart
+    /// collection answers from its rule instead of its members.
     func papers(inFolder id: Int?, recursive: Bool = true) -> [Paper] {
-        guard let id else { return papers.filter { $0.folderId == nil } }
+        guard let id else { return unfiled }
+        if let f = folder(id), let rule = f.smartRule {
+            return papers.filter { paper in
+                rule.matches(paper, evidenceCount: evidence.filter { $0.paperId == paper.id }.count)
+            }
+        }
         var ids: Set<Int> = [id]
         if recursive {
             var frontier = [id]
@@ -358,43 +434,57 @@ final class Store: ObservableObject {
                 for c in children(of: f) where !ids.contains(c.id) { ids.insert(c.id); frontier.append(c.id) }
             }
         }
-        return papers.filter { $0.folderId.map(ids.contains) ?? false }
+        return papers.filter { p in !(membership[p.id]?.isDisjoint(with: ids) ?? true) }
+    }
+
+    /// Papers that are in no hand-made collection. Smart collections do not count, or
+    /// nothing would ever look unfiled.
+    var unfiled: [Paper] {
+        let manual = Set(folders.filter { !$0.isSmart }.map(\.id))
+        return papers.filter { (membership[$0.id] ?? []).isDisjoint(with: manual) }
     }
 
     @discardableResult
-    func addFolder(name: String, parent: Int?, color: String = "#8A93A3") -> Int {
+    func addFolder(name: String, parent: Int?, color: String = "#8A93A3",
+                   rule: SmartRule? = nil) -> Int {
         do {
             let order = (folders.map(\.sortOrder).max() ?? -1) + 1
-            let id = try db.run("INSERT INTO folders (project_id,parent_id,name,color,sort_order) VALUES (?,?,?,?,?)",
-                                [currentProjectId, parent, name, color, order])
+            let id = try db.run("""
+                INSERT INTO folders (project_id,parent_id,name,color,sort_order,rule,icon)
+                VALUES (?,?,?,?,?,?,?)
+                """, [currentProjectId, parent, name, color, order, rule?.rawValue ?? "", rule?.icon ?? ""])
             reloadFolders()
             return Int(id)
-        } catch { fail(error, "Creating folder"); return 0 }
+        } catch { fail(error, "Creating collection"); return 0 }
     }
 
     func updateFolder(_ f: Folder) {
         do {
-            try db.run("UPDATE folders SET name=?, color=?, parent_id=?, sort_order=? WHERE id=?",
-                       [f.name, f.colorHex, f.parentId, f.sortOrder, f.id])
+            try db.run("UPDATE folders SET name=?, color=?, parent_id=?, sort_order=?, rule=?, icon=? WHERE id=?",
+                       [f.name, f.colorHex, f.parentId, f.sortOrder, f.rule, f.icon, f.id])
             reloadFolders()
-        } catch { fail(error, "Saving folder") }
+        } catch { fail(error, "Saving collection") }
     }
 
-    /// Deleting a folder never deletes papers — they fall back to the review root.
+    /// Deleting a collection deletes the label, never the papers or the files.
     func deleteFolder(_ id: Int) {
         do {
-            let descendants = papers(inFolder: id).map(\.id)
-            for pid in descendants { try db.run("UPDATE papers SET folder_id=NULL WHERE id=?", [pid]) }
             try db.run("DELETE FROM folders WHERE id=?", [id])
-            reloadFolders(); reloadPapers()
-        } catch { fail(error, "Deleting folder") }
+            reloadFolders(); reloadMembership()
+        } catch { fail(error, "Deleting collection") }
     }
 
+    /// Kept for the places that still think in terms of moving. Filing a paper somewhere new
+    /// no longer removes it from where it already was — that is the point of collections.
     func move(_ paperIds: [Int], toFolder id: Int?) {
-        do {
-            for pid in paperIds { try db.run("UPDATE papers SET folder_id=? WHERE id=?", [id, pid]) }
-            reloadPapers()
-        } catch { fail(error, "Moving papers") }
+        guard let id else {
+            do {
+                for pid in paperIds { try db.run("DELETE FROM paper_folders WHERE paper_id=?", [pid]) }
+                reloadMembership()
+            } catch { fail(error, "Unfiling papers") }
+            return
+        }
+        addToCollection(paperIds, id)
     }
 
     // MARK: - Tags

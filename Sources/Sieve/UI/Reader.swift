@@ -391,7 +391,10 @@ struct ReaderScreen: View {
         panel.allowedContentTypes = [.pdf]
         panel.message = "Choose the PDF for “\(p.title)”"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        let dest = Library.pdfDir.appendingPathComponent(Downloader.filename(for: p))
+        guard let project = store.project else { return }
+        let dir = Library.pdfDir(id: project.id, name: project.name)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appendingPathComponent(Downloader.filename(for: p))
         try? FileManager.default.removeItem(at: dest)
         do {
             try FileManager.default.copyItem(at: url, to: dest)

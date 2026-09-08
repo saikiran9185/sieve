@@ -338,8 +338,78 @@ struct Folder: Identifiable, Hashable {
     var name: String
     var colorHex: String = "#8A93A3"
     var sortOrder: Int = 0
+    /// Non-empty for a smart collection: the rule decides its members instead of you.
+    var rule: String = ""
+    var icon: String = ""
 
-    var color: Color { Color(hex: colorHex) }
+    var color: Color { .readable(colorHex) }
+    var isSmart: Bool { !rule.isEmpty }
+    var smartRule: SmartRule? { SmartRule(rawValue: rule) }
+    var symbol: String {
+        if !icon.isEmpty { return icon }
+        return isSmart ? (smartRule?.icon ?? "gearshape") : "folder"
+    }
+}
+
+/// A collection that fills itself. The obvious use is the one screening already implies —
+/// papers that survived, papers that were dropped and why — without any manual filing.
+enum SmartRule: String, CaseIterable, Identifiable {
+    case included, excluded, screening, needsFullText, hasHighlights, unread, starred, noConclusion
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .included: return "Included"
+        case .excluded: return "Excluded"
+        case .screening: return "Still to screen"
+        case .needsFullText: return "Needs the full text"
+        case .hasHighlights: return "Has highlights"
+        case .unread: return "Read but not yet coded"
+        case .starred: return "Starred"
+        case .noConclusion: return "No conclusion recorded"
+        }
+    }
+
+    var blurb: String {
+        switch self {
+        case .included: return "Everything that passed full-text assessment."
+        case .excluded: return "Everything screened out, with its reason."
+        case .screening: return "Records that have had no decision yet."
+        case .needsFullText: return "Past screening, but no PDF has been obtained."
+        case .hasHighlights: return "Papers you have taken evidence from."
+        case .unread: return "Has a PDF, but nothing highlighted yet."
+        case .starred: return "Papers you flagged."
+        case .noConclusion: return "Included papers with no conclusion written down."
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .included: return "checkmark.circle"
+        case .excluded: return "xmark.circle"
+        case .screening: return "checklist"
+        case .needsFullText: return "doc.badge.ellipsis"
+        case .hasHighlights: return "highlighter"
+        case .unread: return "book.closed"
+        case .starred: return "star"
+        case .noConclusion: return "text.badge.xmark"
+        }
+    }
+
+    func matches(_ p: Paper, evidenceCount: Int) -> Bool {
+        switch self {
+        case .included: return p.stage == .included
+        case .excluded: return p.stage.isExcluded
+        case .screening: return p.stage == .identified || p.stage == .screening
+        case .needsFullText:
+            return [.sought, .eligibility, .included].contains(p.stage) && !p.hasPDF
+        case .hasHighlights: return evidenceCount > 0
+        case .unread: return p.hasPDF && evidenceCount == 0
+        case .starred: return p.starred
+        case .noConclusion:
+            return p.stage == .included && p.conclusion.isEmpty && p.extractedConclusion.isEmpty
+        }
+    }
 }
 
 // MARK: - PRISMA state machine
@@ -428,7 +498,8 @@ struct Paper: Identifiable, Hashable {
     var notes: String = ""
     var starred: Bool = false
     var dedupeKey: String = ""
-    var folderId: Int? = nil
+    var folderId: Int? = nil          // superseded by the collections join table
+    var fileHash: String = ""         // content fingerprint, so a PDF is never stored twice
     var conclusion: String = ""          // what this paper concludes, in your words
     var toRead: String = ""              // the part you still need to read
     var sdgs: [String] = []              // UN Sustainable Development Goals, from OpenAlex

@@ -7,6 +7,7 @@ struct RootView: View {
     @EnvironmentObject var nav: Navigator
     @EnvironmentObject var engine: SearchEngine
     @State private var dropTargeted = false
+    @State private var importing: (done: Int, total: Int)? = nil
     @AppStorage("sieve.sidebarWidth") private var sidebarWidth: Double = 218
     @AppStorage("sieve.showSidebar") private var showSidebar: Bool = true
 
@@ -31,7 +32,11 @@ struct RootView: View {
                     MethodBar()
                     content
                 }
-                if let toast = store.toast { ToastView(text: toast) }
+                if let job = importing {
+                    ToastView(text: "Importing \(job.done) of \(job.total)…")
+                } else if let toast = store.toast {
+                    ToastView(text: toast)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topLeading) {
@@ -60,7 +65,7 @@ struct RootView: View {
                     .strokeBorder(Palette.accent, lineWidth: 3)
                     .background(Palette.accent.opacity(0.06))
                     .overlay(
-                        Label("Drop PDFs, .bib or .ris files to add them to this review",
+                        Label("Drop PDFs, a folder of them, or a .bib / .ris file",
                               systemImage: "arrow.down.doc")
                             .font(D.heading)
                             .padding(D.s4)
@@ -125,18 +130,59 @@ struct RootView: View {
         }
     }
 
-    private func ingest(_ urls: [URL]) {
+    /// Expands a dropped folder into the files inside it, so a whole folder of PDFs — the
+    /// obvious thing to drag from Finder — imports in one go.
+    private func expand(_ urls: [URL]) -> [URL] {
+        let fm = FileManager.default
+        var out: [URL] = []
+        for url in urls {
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDir) else { continue }
+            if isDir.boolValue {
+                let keys: [URLResourceKey] = [.isRegularFileKey]
+                guard let walker = fm.enumerator(at: url, includingPropertiesForKeys: keys,
+                                                 options: [.skipsHiddenFiles, .skipsPackageDescendants])
+                else { continue }
+                for case let file as URL in walker
+                where ["pdf", "bib", "ris", "bibtex"].contains(file.pathExtension.lowercased()) {
+                    out.append(file)
+                }
+            } else {
+                out.append(url)
+            }
+        }
+        return out
+    }
+
+    private func ingest(_ dropped: [URL]) {
         Task { @MainActor in
-            var pdfs = 0, refs = 0
-            for url in urls {
+            let urls = expand(dropped)
+            guard !urls.isEmpty else {
+                store.flash("Nothing to import — drop PDFs, a .bib/.ris file, or a folder of them")
+                return
+            }
+            importing = (0, urls.count)
+            defer { importing = nil }
+
+            var pdfs = 0, refs = 0, already = 0
+            var seen = Set<String>()
+            for (i, url) in urls.enumerated() {
+                importing = (i + 1, urls.count)
+                // The same file can arrive twice in one drop when nested folders overlap.
+                guard seen.insert(url.standardizedFileURL.path).inserted else { continue }
+
                 let ext = url.pathExtension.lowercased()
                 if ext == "pdf" {
-                    if await Importers.importPDF(at: url, store: store) != nil { pdfs += 1 }
+                    let before = store.papers.count
+                    if await Importers.importPDF(at: url, store: store) != nil {
+                        if store.papers.count > before { pdfs += 1 } else { already += 1 }
+                    }
                 } else if ["bib", "ris", "txt", "bibtex"].contains(ext) {
                     guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-                    let hits = Importers.parseBibliography(text)
-                    for h in hits where store.addPaper(from: h, query: "Imported from \(url.lastPathComponent)") != nil {
-                        refs += 1
+                    for h in Importers.parseBibliography(text) {
+                        if store.addPaper(from: h, query: "Imported from \(url.lastPathComponent)") != nil {
+                            refs += 1
+                        } else { already += 1 }
                     }
                     store.reloadPapers()
                 }
@@ -144,8 +190,9 @@ struct RootView: View {
             var parts: [String] = []
             if pdfs > 0 { parts.append("\(pdfs) PDF\(pdfs == 1 ? "" : "s")") }
             if refs > 0 { parts.append("\(refs) reference\(refs == 1 ? "" : "s")") }
-            store.flash(parts.isEmpty ? "Nothing new — those records are already in this review."
-                                      : "Added " + parts.joined(separator: " and "))
+            let skipped = already > 0 ? " · \(already) already here, nothing duplicated" : ""
+            store.flash(parts.isEmpty ? "Everything in that drop is already in this review."
+                                      : "Added " + parts.joined(separator: " and ") + skipped)
         }
     }
 }

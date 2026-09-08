@@ -223,7 +223,10 @@ final class Downloader: ObservableObject {
                 SafeLink.open(url)
                 return
             }
-            let dest = Library.pdfDir.appendingPathComponent(Self.filename(for: paper))
+            guard let project = store.project else { return }
+            let dir = Library.pdfDir(id: project.id, name: project.name)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dest = dir.appendingPathComponent(Self.filename(for: paper))
             try data.write(to: dest)
             store.setPDFPath(paper.id, dest.path)
             store.flash("Saved “\(paper.title.prefix(40))…”")

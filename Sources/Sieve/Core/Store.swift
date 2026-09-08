@@ -127,6 +127,15 @@ final class Store: ObservableObject {
             ("Just reading",
              "Three steps. Open a paper, mark what matters, write a note.",
              [.read, .highlight, .memo]),
+            ("UX research study",
+             "Interviews and sessions rather than papers: collect, transcribe, code what people said, cluster it, and lay it into a journey or empathy map that cites the quotes.",
+             [.importSources, .read, .highlight, .code, .cluster, .frame, .synthesize, .export]),
+            ("Design research — discover",
+             "The front half of a design project: find out what is true before deciding anything. Ends in a framing you can defend.",
+             [.search, .importSources, .read, .highlight, .code, .frame, .validate, .synthesize]),
+            ("Competitive and positioning",
+             "Look at what already exists, compare it on the same dimensions, and work out where the gap is.",
+             [.search, .importSources, .read, .highlight, .compare, .frame, .synthesize, .export]),
         ]
         for (name, detail, blocks) in presets {
             saveMethod(Method(id: 0, projectId: nil, name: name, detail: detail,

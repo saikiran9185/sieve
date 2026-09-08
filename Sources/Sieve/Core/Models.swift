@@ -227,7 +227,7 @@ struct Relation: Identifiable, Hashable {
 /// build the process their discipline actually uses instead of adopting the app's.
 enum MethodBlock: String, CaseIterable, Identifiable, Codable {
     case search, importSources = "import", screen, retrieve, read, highlight, code, tag,
-         memo, cluster, compare, relate, vote, rank, extract, synthesize, validate, export
+         memo, cluster, compare, relate, vote, rank, extract, frame, synthesize, validate, export
     var id: String { rawValue }
 
     var label: String {
@@ -247,6 +247,7 @@ enum MethodBlock: String, CaseIterable, Identifiable, Codable {
         case .vote: return "Vote"
         case .rank: return "Rank"
         case .extract: return "Extract"
+        case .frame: return "Frame it"
         case .synthesize: return "Synthesize"
         case .validate: return "Validate"
         case .export: return "Export"
@@ -270,6 +271,7 @@ enum MethodBlock: String, CaseIterable, Identifiable, Codable {
         case .vote: return "hand.thumbsup"
         case .rank: return "list.number"
         case .extract: return "tablecells"
+        case .frame: return "square.grid.3x3"
         case .synthesize: return "doc.append"
         case .validate: return "checkmark.shield"
         case .export: return "square.and.arrow.up"
@@ -286,8 +288,10 @@ enum MethodBlock: String, CaseIterable, Identifiable, Codable {
         case .retrieve: return "library"
         case .read, .highlight, .code, .memo: return "reader"
         case .tag: return "tags"
-        case .cluster, .relate: return "map"
+        case .cluster: return "frames"
+        case .relate: return "map"
         case .compare, .extract, .rank: return "matrix"
+        case .frame: return "frames"
         case .synthesize, .validate: return "evidence"
         case .export: return "prisma"
         }
@@ -304,12 +308,13 @@ enum MethodBlock: String, CaseIterable, Identifiable, Codable {
         case .code: return "Attach analytic codes to passages."
         case .tag: return "Set up the categories you code with."
         case .memo: return "Write your own thinking alongside the evidence."
-        case .cluster: return "Group codes into themes."
+        case .cluster: return "Group observations into themes, as an affinity grid."
         case .compare: return "Set findings side by side."
         case .relate: return "Link evidence that supports or contradicts other evidence."
         case .vote: return "Rate or vote on what to include."
         case .rank: return "Order sources by importance."
         case .extract: return "Pull structured data into the matrix."
+        case .frame: return "Lay the evidence into a method — SWOT, a journey map, an empathy map."
         case .synthesize: return "Build the argument from the evidence."
         case .validate: return "Check claims against their sources."
         case .export: return "Produce the report, diagram and data files."

@@ -322,7 +322,8 @@ struct Sidebar: View {
             row(.dashboard); row(.search); row(.library)
         }
         SwiftUI.Section("Review") {
-            row(.screening); row(.reader); row(.evidence); row(.map); row(.matrix); row(.prisma)
+            row(.screening); row(.reader); row(.evidence)
+            row(.map); row(.matrix); row(.frames); row(.prisma); row(.aiTrail)
         }
         SwiftUI.Section("Setup") {
             row(.method); row(.tags); row(.settings)

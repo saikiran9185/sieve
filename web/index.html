@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sieve</title>
+<meta name="description" content="A provenance-first research workspace. Runs in your browser; your library never leaves it.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1c2028">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <header>
+      <h1>Sieve</h1>
+      <p id="libraryCount">no sources yet</p>
+    </header>
+    <button class="nav" data-view="library" aria-current="true">Library</button>
+    <button class="nav" data-view="reader">Reader</button>
+    <button class="nav" data-view="evidence">Evidence</button>
+    <button class="nav" data-view="tags">Tags</button>
+    <footer>
+      <button id="addBtn" class="primary">Add PDFs</button>
+      <div class="row">
+        <button id="exportBtn" class="quiet">Back up</button>
+        <button id="importBtn" class="quiet">Restore</button>
+      </div>
+      <p id="storage" class="hint"></p>
+      <p class="hint">
+        Everything is stored in this browser. No account, no server, nothing uploaded.
+      </p>
+    </footer>
+  </nav>
+
+  <main>
+    <section id="library" class="view">
+      <div class="bar">
+        <input id="filter" type="search" placeholder="Filter by title or author" aria-label="Filter sources">
+        <span class="grow"></span>
+        <select id="stageFilter" aria-label="Filter by stage">
+          <option value="">All stages</option>
+          <option value="identified">To screen</option>
+          <option value="included">Included</option>
+          <option value="excluded">Excluded</option>
+        </select>
+      </div>
+      <div id="sourceList" class="list"></div>
+      <div id="libraryEmpty" class="empty">
+        <h2>Drop PDFs anywhere on this page</h2>
+        <p>They are stored in this browser and never uploaded. Sieve reads each one's abstract,
+           keywords and conclusion out of the file itself — no model, no network.</p>
+      </div>
+    </section>
+
+    <section id="reader" class="view hidden">
+      <div class="bar" id="readerBar">
+        <strong id="readerTitle">No source open</strong>
+        <span class="grow"></span>
+        <div id="palette" class="palette"></div>
+        <button id="zoomOut" class="quiet" aria-label="Zoom out">−</button>
+        <button id="zoomIn" class="quiet" aria-label="Zoom in">+</button>
+      </div>
+      <div id="selectionHint" class="hint bar-sub">Select text, then click a colour or press its number.</div>
+      <div class="split">
+        <div id="pages" class="pages"></div>
+        <aside id="readerSide">
+          <h3>Highlights</h3>
+          <div id="readerEvidence" class="list compact"></div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="evidence" class="view hidden">
+      <div class="bar">
+        <input id="evFilter" type="search" placeholder="Search your highlights" aria-label="Search highlights">
+        <span class="grow"></span>
+        <button id="exportEvidence" class="quiet">Export Markdown</button>
+        <button id="exportCsv" class="quiet">Export CSV</button>
+      </div>
+      <div id="evidenceList" class="list"></div>
+    </section>
+
+    <section id="tags" class="view hidden">
+      <div class="bar"><strong>Tags</strong><span class="grow"></span>
+        <button id="addTag" class="quiet">New tag</button></div>
+      <div id="tagList" class="list"></div>
+    </section>
+  </main>
+</div>
+
+<div id="drop" class="drop hidden"><div>Drop PDFs to add them</div></div>
+<div id="toast" class="toast hidden"></div>
+<input id="fileInput" type="file" accept="application/pdf" multiple hidden>
+<input id="jsonInput" type="file" accept="application/json" hidden>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

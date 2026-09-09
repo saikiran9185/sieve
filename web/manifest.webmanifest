@@ -1,0 +1,13 @@
+{
+  "name": "Sieve — research workspace",
+  "short_name": "Sieve",
+  "description": "Read, highlight and organise research. Everything stays in your browser.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#1c2028",
+  "theme_color": "#1c2028",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

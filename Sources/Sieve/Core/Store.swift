@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import SieveCore
 
 /// Single source of truth. Views observe this; nothing else touches SQL.
 @MainActor

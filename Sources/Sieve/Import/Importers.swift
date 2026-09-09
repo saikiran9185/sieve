@@ -1,6 +1,7 @@
 import Foundation
 import PDFKit
 import AppKit
+import SieveCore
 
 /// Everything that turns an outside file into a record in the review.
 enum Importers {
@@ -251,7 +252,7 @@ enum Importers {
         m.venue = ((loc["source"] as? [String: Any])?["display_name"] as? String) ?? ""
         m.doi = ((w["doi"] as? String) ?? "")
             .replacingOccurrences(of: "https://doi.org/", with: "").lowercased()
-        m.abstract = OpenAlexProvider.invertedAbstract(w["abstract_inverted_index"])
+        m.abstract = OpenAlex.invertedAbstract(w["abstract_inverted_index"])
         m.url = m.doi.isEmpty ? ((loc["landing_page_url"] as? String) ?? "") : "https://doi.org/\(m.doi)"
         m.pubDate = (w["publication_date"] as? String) ?? ""
         m.citedBy = (w["cited_by_count"] as? Int) ?? 0

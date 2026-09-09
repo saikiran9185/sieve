@@ -1,6 +1,7 @@
 import SwiftUI
 import PDFKit
 import AppKit
+import SieveCore
 
 /// Bridges SwiftUI to the live PDFView so the toolbar can drive it.
 @MainActor

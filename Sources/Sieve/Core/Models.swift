@@ -667,48 +667,6 @@ struct MatrixCell: Hashable {
     var aiGenerated: Bool = false
 }
 
-// MARK: - Search results (pre-import)
-
-struct SearchHit: Identifiable, Hashable {
-    var id: String                    // provider-native id
-    var title: String
-    var authors: [String]
-    var year: Int?
-    var venue: String
-    var doi: String
-    var abstract: String
-    var url: String
-    var pdfURL: String
-    var provider: String
-    var oaStatus: String
-    var citedBy: Int
-    var mergedFrom: [String] = []     // providers that also returned this record
-    var sdgs: [String] = []
-    var pubDate: String = ""
-    var docType: String = ""
-    var language: String = ""
-    var openAlexId: String = ""
-    var references: [String] = []
-
-    var dedupeKey: String { Dedupe.key(doi: doi, title: title, year: year) }
-}
-
-// MARK: - Deduplication
-
-/// Deciding whether two records are the same paper. DOI is definitive. Otherwise the
-/// normalised title carries it: the same article is routinely dated a year apart across
-/// databases because of online-first publication, so the year only joins the key when
-/// the title is too short to identify a paper on its own.
-enum Dedupe {
-    static func key(doi: String, title: String, year: Int?) -> String {
-        let d = doi.trimmingCharacters(in: .whitespaces).lowercased()
-        if !d.isEmpty { return "doi:" + d }
-        let t = title.lowercased().filter { $0.isLetter || $0.isNumber }
-        if t.count >= 25 { return "t:" + String(t.prefix(90)) }
-        return "t:" + t + ":" + (year.map(String.init) ?? "")
-    }
-}
-
 // MARK: - Colour palette
 
 enum Palette {

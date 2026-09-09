@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SieveCore
 
 /// One query, six databases, one merged list. The provenance of every hit stays
 /// visible — you can always see which database it came from and what you searched.

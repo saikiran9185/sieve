@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SieveCore
 
 /// The library: folders on the left, papers on the right, and a filter bar that can narrow
 /// by stage, tag, author, year, SDG and open-access status at once.

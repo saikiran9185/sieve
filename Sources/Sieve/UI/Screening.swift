@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SieveCore
 
 /// Title/abstract screening, full-text assessment, and a record of what you already decided.
 /// Every decision is reversible: nothing here is a one-way door.

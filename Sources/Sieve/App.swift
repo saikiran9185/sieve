@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SieveCore
 
 @main
 struct SieveApp: App {
@@ -11,6 +12,10 @@ struct SieveApp: App {
     @StateObject private var enricher = Enricher()
 
     init() {
+        // The engine keeps no credential API of its own, so the platform store has to be in
+        // place before any provider can read a key.
+        Secrets.store = KeychainStore.shared
+
         // The window is built before any view appears, so the saved appearance is applied here
         // rather than in onAppear, which would flash the wrong theme first.
         Appearance.apply(Appearance.current)

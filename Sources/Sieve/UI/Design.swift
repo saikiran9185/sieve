@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SieveCore
 
 /// Visual language: a quiet, paper-like workspace. Nothing competes with the text
 /// you're reading — colour is reserved almost entirely for your own tags.

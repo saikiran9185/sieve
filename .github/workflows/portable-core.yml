@@ -1,0 +1,52 @@
+name: Portable core
+
+# SieveCore is the part of Sieve that carries no Apple framework: the fourteen database
+# providers, deduplication, and the shared search types. A Windows GUI is being built on
+# top of it, so every push has to prove the engine still compiles off macOS. When this
+# job goes red, the Windows build is broken even though the Mac app still works.
+
+on:
+  push:
+    branches: [main, windows-port]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (Swift 6)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: compnerd/gha-setup-swift@main
+        with:
+          branch: swift-6.0.3-release
+          tag: 6.0.3-RELEASE
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build SieveCore
+        run: swift build --target SieveCore -v
+
+  linux:
+    name: Linux (Swift 6)
+    runs-on: ubuntu-latest
+    container: swift:6.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build SieveCore
+        run: swift build --target SieveCore
+
+  macos:
+    name: macOS (full app)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build everything
+        run: swift build

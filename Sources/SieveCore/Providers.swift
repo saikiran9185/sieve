@@ -1,8 +1,13 @@
 import Foundation
+// Off Apple platforms, swift-corelibs-foundation ships XMLParser in its own module.
+// arXiv's Atom feed is parsed with it, so the Windows and Linux builds need this.
+#if canImport(FoundationXML)
+import FoundationXML
+#endif
 
 /// One academic database Sieve can query. All six run concurrently against a single
 /// query string and their results get merged into one deduplicated list.
-protocol SearchProvider: Sendable {
+public protocol SearchProvider: Sendable {
     var name: String { get }
     var blurb: String { get }
     /// UserDefaults key holding this provider's API key, when it needs one. Providers that
@@ -13,13 +18,13 @@ protocol SearchProvider: Sendable {
     func search(_ query: String, limit: Int, email: String) async throws -> [SearchHit]
 }
 
-extension SearchProvider {
+public extension SearchProvider {
     var keyDefault: String? { nil }
     var signupURL: String? { nil }
     /// Read from the Keychain, never from the preferences plist.
     var apiKey: String {
         guard let k = keyDefault else { return "" }
-        return KeyStore.get(k)
+        return Secrets.get(k)
     }
     var needsKey: Bool { keyDefault != nil }
     var isReady: Bool { !needsKey || !apiKey.isEmpty }
@@ -28,19 +33,19 @@ extension SearchProvider {
 /// Sites with no usable API — Google Scholar and BASE forbid or block automated querying,
 /// and the big publishers gate search behind institutional agreements. Sieve builds the
 /// search URL, opens it in your browser, and takes the .bib or .ris you export back.
-struct ExternalSite: Identifiable, Hashable {
-    let id: String
-    let name: String
-    let blurb: String
-    let template: String   // {q} is replaced by the query
-    let howTo: String
+public struct ExternalSite: Identifiable, Hashable {
+    public let id: String
+    public let name: String
+    public let blurb: String
+    public let template: String   // {q} is replaced by the query
+    public let howTo: String
 
-    func url(for query: String) -> URL? {
+    public func url(for query: String) -> URL? {
         let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         return URL(string: template.replacingOccurrences(of: "{q}", with: q))
     }
 
-    static let all: [ExternalSite] = [
+    public static let all: [ExternalSite] = [
         ExternalSite(id: "gscholar", name: "Google Scholar",
                      blurb: "Broadest free index — but no API, and automated querying is against its terms",
                      template: "https://scholar.google.com/scholar?q={q}",
@@ -92,8 +97,8 @@ struct ExternalSite: Identifiable, Hashable {
     ]
 }
 
-enum Net {
-    static let session: URLSession = {
+public enum Net {
+    public static let session: URLSession = {
         let c = URLSessionConfiguration.default
         c.timeoutIntervalForRequest = 25
         c.httpAdditionalHeaders = ["User-Agent": "Sieve/1.0 (macOS literature review tool)"]
@@ -102,10 +107,10 @@ enum Net {
 
     /// Ceilings on what a remote server can make the app hold in memory. A hostile or
     /// broken endpoint should not be able to stream gigabytes into a research tool.
-    static let maxResponseBytes = 8 * 1024 * 1024        // metadata responses
-    static let maxDownloadBytes = 200 * 1024 * 1024      // a PDF
+    public static let maxResponseBytes = 8 * 1024 * 1024        // metadata responses
+    public static let maxDownloadBytes = 200 * 1024 * 1024      // a PDF
 
-    static func json(_ url: URL, headers: [String: String] = [:], retryOn429: Int = 0) async throws -> Any {
+    public static func json(_ url: URL, headers: [String: String] = [:], retryOn429: Int = 0) async throws -> Any {
         guard let safe = SafeLink.web(url) else { throw badScheme(url) }
         var req = URLRequest(url: safe)
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
@@ -122,7 +127,7 @@ enum Net {
         return try JSONSerialization.jsonObject(with: data)
     }
 
-    static func text(_ url: URL) async throws -> Data {
+    public static func text(_ url: URL) async throws -> Data {
         guard let safe = SafeLink.web(url) else { throw badScheme(url) }
         let (data, _) = try await session.data(from: safe)
         try check(size: data.count, limit: maxResponseBytes, from: safe)
@@ -130,7 +135,7 @@ enum Net {
     }
 
     /// Downloads a file, refusing anything that is not web traffic or is implausibly large.
-    static func download(_ url: URL, limit: Int = maxDownloadBytes) async throws -> Data {
+    public static func download(_ url: URL, limit: Int = maxDownloadBytes) async throws -> Data {
         guard let safe = SafeLink.web(url) else { throw badScheme(url) }
         var req = URLRequest(url: safe)
         req.timeoutInterval = 90
@@ -155,7 +160,7 @@ enum Net {
             "Refused to open “\(url.scheme ?? "?")://” — Sieve only makes ordinary web requests."])
     }
 
-    static func enc(_ s: String) -> String {
+    public static func enc(_ s: String) -> String {
         s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? s
     }
 }
@@ -210,7 +215,7 @@ struct OpenAlexProvider: SearchProvider {
                 year: num(w["publication_year"]),
                 venue: str(host["display_name"]),
                 doi: cleanDOI(str(w["doi"])),
-                abstract: Self.invertedAbstract(w["abstract_inverted_index"]),
+                abstract: OpenAlex.invertedAbstract(w["abstract_inverted_index"]),
                 url: str(w["doi"]).isEmpty ? str(oa["landing_page_url"]) : str(w["doi"]),
                 pdfURL: str(oa["pdf_url"]),
                 provider: name,
@@ -233,12 +238,6 @@ struct OpenAlexProvider: SearchProvider {
     }
 
     /// OpenAlex ships abstracts as an inverted index for licensing reasons; rebuild the prose.
-    static func invertedAbstract(_ any: Any?) -> String {
-        guard let inv = any as? [String: [Int]] else { return "" }
-        var words: [(Int, String)] = []
-        for (word, positions) in inv { for p in positions { words.append((p, word)) } }
-        return words.sorted { $0.0 < $1.0 }.map(\.1).joined(separator: " ")
-    }
 }
 
 // MARK: - Crossref  (the DOI registry — authoritative bibliographic record)

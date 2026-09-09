@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SieveCore
 
 /// A map of the corpus. Papers are nodes; an edge means the two papers cite the same work
 /// (bibliographic coupling) or one cites the other. Both come from the reference lists

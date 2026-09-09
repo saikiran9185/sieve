@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import SieveCore
 
 /// Fires one query at every enabled database at the same time, then folds the
 /// answers into a single list where each real-world paper appears exactly once.
@@ -8,16 +9,10 @@ import SwiftUI
 final class SearchEngine: ObservableObject {
     /// Every database Sieve can query directly. The keyless ones are on by default;
     /// the key-gated ones stay dark until a key is pasted into Settings.
-    static let allProviders: [any SearchProvider] = [
-        OpenAlexProvider(), CrossrefProvider(), EuropePMCProvider(), PubMedProvider(),
-        COREProvider(), OpenAIREProvider(), ArxivProvider(), DOAJProvider(), PLOSProvider(),
-        SemanticScholarProvider(), IEEEProvider(), SpringerProvider(),
-        ElsevierProvider(), LensProvider()
-    ]
+    /// The list itself lives in `SieveCore`, so the Windows build queries the same fourteen.
+    static let allProviders: [any SearchProvider] = ProviderRegistry.all
 
-    static var defaultEnabled: Set<String> {
-        Set(allProviders.filter { !$0.needsKey }.map(\.name))
-    }
+    static var defaultEnabled: Set<String> { ProviderRegistry.defaultEnabledNames }
 
     @Published var query: String = ""
     @Published var enabled: Set<String> = SearchEngine.defaultEnabled

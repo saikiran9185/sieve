@@ -1,46 +1,23 @@
 import Foundation
 import AppKit
 import Security
+import SieveCore
 
-/// Opening a URL hands control to whatever application claims its scheme. Every link Sieve
-/// can open arrives from an external source — a search API's JSON, a DOI record, a `.bib`
-/// file someone else exported — so a hostile or compromised response could otherwise ask
-/// the app to launch `file:///`, `ssh://`, or a custom scheme registered by malware.
-/// Nothing but plain web traffic is ever opened.
-enum SafeLink {
-    static let allowedSchemes: Set<String> = ["http", "https"]
-
-    /// Returns the URL only if it is ordinary web traffic with a real host.
-    static func web(_ string: String) -> URL? {
-        let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return nil }
-        return web(url)
-    }
-
-    static func web(_ url: URL) -> URL? {
-        guard let scheme = url.scheme?.lowercased(),
-              allowedSchemes.contains(scheme),
-              let host = url.host, !host.isEmpty else { return nil }
-        return url
-    }
-
+/// The scheme allow-list and every URL check now live in `SieveCore.SafeLink`, so macOS and
+/// Windows make the same decision about what counts as a safe link. What stays here is the
+/// only part that is genuinely per-platform: actually handing a URL to the desktop.
+extension SafeLink {
     /// The only route by which Sieve opens anything in another application.
     @discardableResult
-    static func open(_ string: String) -> Bool {
+    public static func open(_ string: String) -> Bool {
         guard let url = web(string) else { return false }
         return NSWorkspace.shared.open(url)
     }
 
     @discardableResult
-    static func open(_ url: URL) -> Bool {
+    public static func open(_ url: URL) -> Bool {
         guard let safe = web(url) else { return false }
         return NSWorkspace.shared.open(safe)
-    }
-
-    /// Builds the canonical link for a record, preferring its DOI.
-    static func forPaper(url: String, doi: String) -> URL? {
-        if !doi.isEmpty, let u = web("https://doi.org/\(doi)") { return u }
-        return web(url)
     }
 }
 
@@ -50,14 +27,17 @@ enum SafeLink {
 ///
 /// Keys written by earlier versions are migrated on first read and then deleted from the
 /// preferences file.
-enum KeyStore {
+///
+/// This is the macOS implementation of `SieveCore.SecretStore`; `App` installs it at launch.
+final class KeychainStore: SecretStore, @unchecked Sendable {
+    static let shared = KeychainStore()
     private static let service = "com.saikiran.Sieve"
 
-    static func get(_ account: String) -> String {
+    func get(_ account: String) -> String {
         if let migrated = migrateIfNeeded(account) { return migrated }
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
@@ -72,11 +52,11 @@ enum KeyStore {
         return value
     }
 
-    static func set(_ value: String, for account: String) {
+    func set(_ value: String, for account: String) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: Self.service,
             kSecAttrAccount as String: account
         ]
         SecItemDelete(base as CFDictionary)
@@ -89,7 +69,7 @@ enum KeyStore {
     }
 
     /// Moves a key written by an older build out of the preferences plist.
-    private static func migrateIfNeeded(_ account: String) -> String? {
+    private func migrateIfNeeded(_ account: String) -> String? {
         let defaults = UserDefaults.standard
         guard let legacy = defaults.string(forKey: account)?
             .trimmingCharacters(in: .whitespacesAndNewlines), !legacy.isEmpty else { return nil }
@@ -98,4 +78,10 @@ enum KeyStore {
         defaults.synchronize()
         return legacy
     }
+}
+
+/// Kept so existing call sites read unchanged; the storage is the Keychain either way.
+enum KeyStore {
+    static func get(_ account: String) -> String { KeychainStore.shared.get(account) }
+    static func set(_ value: String, for account: String) { KeychainStore.shared.set(value, for: account) }
 }

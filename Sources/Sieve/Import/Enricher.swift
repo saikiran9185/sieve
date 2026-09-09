@@ -46,7 +46,7 @@ final class Enricher: ObservableObject {
             }
 
             guard let m = await Importers.lookupOnline(doi: q.doi, title: q.title, year: q.year) else {
-                if q != p { store.updatePaper(q) }
+                if q != p { store.updatePaper(q, recordUndo: false) }
                 r.unmatched += 1
                 continue
             }
@@ -62,7 +62,7 @@ final class Enricher: ObservableObject {
             if q.year == nil { q.year = m.year }
             if q.citedBy == 0 { q.citedBy = m.citedBy }
             if q.url.isEmpty { q.url = m.url }
-            store.updatePaper(q)
+            store.updatePaper(q, recordUndo: false)
 
             // OpenAlex asks for no more than ~10 requests a second; this stays well under.
             try? await Task.sleep(nanoseconds: 120_000_000)

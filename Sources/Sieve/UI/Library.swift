@@ -578,7 +578,7 @@ struct SmartCollectionSheet: View {
 
     private func matchCount(_ rule: SmartRule) -> Int {
         store.papers.filter { p in
-            rule.matches(p, evidenceCount: store.evidence.filter { $0.paperId == p.id }.count)
+            rule.matches(p, evidenceCount: store.evidenceCount(forPaper: p.id))
         }.count
     }
 }
@@ -667,7 +667,7 @@ struct PaperRow: View {
                     } else if paper.pdfBroken {
                         Chip(text: "file unreadable", color: Palette.rose, icon: "xmark.octagon.fill")
                     }
-                    let n = store.evidence(forPaper: paper.id).count
+                    let n = store.evidenceCount(forPaper: paper.id)
                     if n > 0 { Chip(text: "\(n) highlights", color: Palette.amber, icon: "highlighter") }
                     ForEach(paper.sdgs.prefix(2), id: \.self) { Chip(text: $0, color: Palette.violet, icon: "globe") }
                     if !paper.excludeReason.isEmpty {
@@ -815,8 +815,8 @@ struct NewSourceSheet: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 SectionLabel(text: "Notes")
-                TextEditor(text: $notes)
-                    .font(D.body).frame(height: 70).padding(4)
+                StableTextEditor(text: $notes)
+                    .frame(height: 70)
                     .background(D.surface).clipShape(RoundedRectangle(cornerRadius: D.radius))
                     .hairlineBorder()
             }

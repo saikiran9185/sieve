@@ -28,6 +28,25 @@ struct SieveApp: App {
                 .frame(minWidth: 1080, minHeight: 680)
         }
         .commands {
+            // ⌘Z belongs to whatever you are typing in first; only when nothing is being
+            // typed does it mean "undo the last change to the library".
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") { undo() }
+                    .keyboardShortcut("z", modifiers: .command)
+                Button("Redo") { redo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+            }
+            CommandGroup(after: .sidebar) {
+                Button(nav.focusMode ? "Leave Reading Mode" : "Reading Mode") {
+                    if !nav.focusMode { nav.section = .reader }
+                    nav.focusMode.toggle()
+                }
+                .keyboardShortcut("f", modifiers: [.command, .control])
+                Button(nav.hideHighlights ? "Show My Highlights" : "Hide My Highlights") {
+                    nav.hideHighlights.toggle()
+                }
+                .keyboardShortcut("h", modifiers: [.command, .control])
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Review…") { nav.section = .dashboard; nav.showNewProject = true }
                     .keyboardShortcut("n", modifiers: [.command, .shift])
@@ -59,6 +78,28 @@ struct SieveApp: App {
                 }
             }
         }
+    }
+
+    /// A note field has its own history, word by word. Handing ⌘Z to the library while the
+    /// insertion point is in a note is how an app throws away a paragraph you were fixing.
+    private func undo() {
+        if let tv = NSApp.keyWindow?.firstResponder as? NSTextView,
+           tv.undoManager?.canUndo == true {
+            tv.undoManager?.undo()
+            return
+        }
+        if let name = store.history.undo() { store.flash("Undid \(name)") }
+        else { NSSound.beep() }
+    }
+
+    private func redo() {
+        if let tv = NSApp.keyWindow?.firstResponder as? NSTextView,
+           tv.undoManager?.canRedo == true {
+            tv.undoManager?.redo()
+            return
+        }
+        if let name = store.history.redo() { store.flash("Redid \(name)") }
+        else { NSSound.beep() }
     }
 }
 
@@ -135,8 +176,39 @@ final class Navigator: ObservableObject {
     @Published var evidenceFocusId: Int? = nil
     @Published var librarySelection: LibrarySelection = .all
 
+    /// Reading mode. On a laptop screen the panels either side of the document take more
+    /// room than the document does. Focus gives all of it back — no sidebar, no paper list,
+    /// no inspector, no method bar — and the tools come back as an overlay only when there
+    /// is a selection to act on, so turning them on never moves the page you are reading.
+    @Published var focusMode: Bool = UserDefaults.standard.bool(forKey: "sieve.focusMode") {
+        didSet { UserDefaults.standard.set(focusMode, forKey: "sieve.focusMode") }
+    }
+
+    /// Reading mode only takes the chrome away on the screen that has a document on it.
+    /// Elsewhere there would be nothing left to click to get the app back.
+    var readingModeActive: Bool { focusMode && section == .reader }
+
+    /// Your marks, hidden. Re-reading a passage without your own colour on top of it is a
+    /// different reading, and it is worth being able to ask for it.
+    @Published var hideHighlights: Bool = UserDefaults.standard.bool(forKey: "sieve.hideHighlights") {
+        didSet { UserDefaults.standard.set(hideHighlights, forKey: "sieve.hideHighlights") }
+    }
+
+    init() {
+        // Come back to the screen you left, not to a dashboard you then navigate out of.
+        if let raw = ReadingMemory.lastSection, let s = Section(rawValue: raw) {
+            section = s
+        }
+    }
+
     func read(_ paperId: Int) {
         readingPaperId = paperId
         section = .reader
+    }
+
+    /// Remembers the screen and the paper so the next launch resumes rather than restarts.
+    func rememberPlace(project: Int) {
+        ReadingMemory.lastSection = section.rawValue
+        ReadingMemory.setLastPaper(readingPaperId, project: project)
     }
 }

@@ -20,7 +20,9 @@ struct RootView: View {
         // sidebar and gets clipped. Laying the two columns out here removes the overlay
         // entirely: the sidebar occupies real width and nothing is drawn under it.
         HStack(spacing: 0) {
-            if showSidebar {
+            // Reading mode takes the sidebar and the method bar away too. Half the width of a
+            // 13-inch screen was going to chrome around a document that wanted all of it.
+            if showSidebar && !nav.readingModeActive {
                 Sidebar()
                     .frame(width: sidebarWidth)
                     .background(.bar)
@@ -29,7 +31,7 @@ struct RootView: View {
 
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    MethodBar()
+                    if !nav.readingModeActive { MethodBar() }
                     content
                 }
                 if let job = importing {
@@ -40,7 +42,7 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topLeading) {
-                if !showSidebar {
+                if !showSidebar && !nav.readingModeActive {
                     Button {
                         withAnimation(.easeOut(duration: 0.15)) { showSidebar = true }
                     } label: {
@@ -83,6 +85,19 @@ struct RootView: View {
         .sheet(isPresented: $nav.showShortcuts) { ShortcutSheet { nav.showShortcuts = false } }
         .onChange(of: nav.requestImportPDF) { _, v in if v { nav.requestImportPDF = false; chooseFiles(pdf: true) } }
         .onChange(of: nav.requestImportBib) { _, v in if v { nav.requestImportBib = false; chooseFiles(pdf: false) } }
+        // Resuming, rather than restarting, is the whole point: the paper you were reading is
+        // reopened before anything is drawn, and every move is filed as you make it.
+        .onAppear { restoreLastPaper() }
+        .onChange(of: store.currentProjectId) { _, _ in restoreLastPaper() }
+        .onChange(of: nav.section) { _, _ in nav.rememberPlace(project: store.currentProjectId) }
+        .onChange(of: nav.readingPaperId) { _, _ in nav.rememberPlace(project: store.currentProjectId) }
+    }
+
+    private func restoreLastPaper() {
+        guard nav.readingPaperId == nil,
+              let id = ReadingMemory.lastPaper(project: store.currentProjectId),
+              store.paper(id) != nil else { return }
+        nav.readingPaperId = id
     }
 
     @ViewBuilder

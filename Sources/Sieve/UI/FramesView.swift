@@ -411,8 +411,8 @@ struct FrameCellEditor: View {
                 }
             }
 
-            TextEditor(text: $text)
-                .font(D.body).frame(height: 90).padding(4)
+            StableTextEditor(text: $text)
+                .frame(height: 90)
                 .background(D.surface).clipShape(RoundedRectangle(cornerRadius: D.radius))
                 .hairlineBorder()
 

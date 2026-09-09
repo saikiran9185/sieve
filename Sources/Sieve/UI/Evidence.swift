@@ -76,6 +76,7 @@ struct EvidenceView: View {
             }
             .frame(width: 160)
             Spacer()
+            UndoRedoButtons(history: store.history, store: store)
             Text("\(items.count) of \(store.evidence.count)").font(D.small).foregroundStyle(.secondary)
             if Assistant.isAvailable && assistant.enabled {
                 Button { showAsk = true } label: { Label("Ask across papers", systemImage: "sparkle") }
@@ -135,7 +136,7 @@ struct EvidenceView: View {
                 .buttonStyle(.plain)
 
                 ForEach(store.tags) { t in
-                    let n = store.evidence.filter { $0.tagIds.contains(t.id) }.count
+                    let n = store.evidenceCount(forTag: t.id)
                     Button {
                         if tagFilter.contains(t.id) { tagFilter.remove(t.id) } else { tagFilter.insert(t.id) }
                     } label: {

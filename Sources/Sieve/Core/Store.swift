@@ -26,6 +26,21 @@ final class Store: ObservableObject {
     @Published var lastError: String?
     @Published var toast: String?
 
+    /// Every reversible edit in the library. Views observe it directly for their
+    /// undo and redo buttons; see `UndoStack` for why undo is itself a write.
+    let history = UndoStack()
+
+    /// Counts kept alongside the rows rather than recomputed.
+    ///
+    /// The reader's paper list asked `evidence(forPaper:)` for a badge on every row, which
+    /// scanned every highlight in the review once per row, on every layout pass. On a review
+    /// with a few hundred highlights that is tens of thousands of comparisons per frame,
+    /// inside a layout pass that SwiftUI runs more than once — which is how the window came
+    /// to spend minutes unresponsive. These are rebuilt once, when the rows change.
+    @Published private(set) var evidenceCountByPaper: [Int: Int] = [:]
+    @Published private(set) var evidenceCountByTag: [Int: Int] = [:]
+    @Published private(set) var evidenceByPaper: [Int: [Evidence]] = [:]
+
     var project: Project? { projects.first { $0.id == currentProjectId } }
     /// The colours you highlight with: the "type" axis.
     var categoryTags: [Tag] { tags.filter { $0.tagKind == .type } }
@@ -182,7 +197,12 @@ final class Store: ObservableObject {
         } catch { fail(error, "Deleting review") }
     }
 
-    func switchTo(_ id: Int) { currentProjectId = id; reloadAll() }
+    func switchTo(_ id: Int) {
+        currentProjectId = id
+        // Recorded steps point at rows in a review you are no longer looking at.
+        history.clear()
+        reloadAll()
+    }
 
     func reloadAll() {
         reloadTags(); reloadFolders(); reloadPapers(); reloadColumns(); reloadEvidence()
@@ -353,7 +373,20 @@ final class Store: ObservableObject {
         papers.filter { $0.sourceDB == "Collected by me" }
     }
 
-    func updatePaper(_ p: Paper) {
+    /// `coalesceKey` groups a burst of edits to one field into a single undo step, so ⌘Z
+    /// after typing a paragraph of notes takes the paragraph back, not one word of it.
+    func updatePaper(_ p: Paper, undoName: String = "an edit", coalesceKey: String? = nil,
+                     recordUndo: Bool = true) {
+        let before = paper(p.id)
+        writePaper(p)
+        if recordUndo, let before, before != p {
+            history.record(undoName, coalesceKey: coalesceKey,
+                           backwards: { [weak self] in self?.writePaper(before) },
+                           forwards: { [weak self] in self?.writePaper(p) })
+        }
+    }
+
+    private func writePaper(_ p: Paper) {
         if let existing = paper(p.id), existing.pdfPath != p.pdfPath {
             PDFVault.invalidate(existing.pdfPath)
             PDFVault.invalidate(p.pdfPath)
@@ -379,6 +412,16 @@ final class Store: ObservableObject {
     }
 
     func setStage(_ paperId: Int, _ stage: Stage, reason: String = "") {
+        let before = paper(paperId).map { ($0.stage, $0.excludeReason) }
+        writeStage(paperId, stage, reason)
+        if let before, before.0 != stage || before.1 != reason {
+            history.record("a screening decision",
+                           backwards: { [weak self] in self?.writeStage(paperId, before.0, before.1) },
+                           forwards: { [weak self] in self?.writeStage(paperId, stage, reason) })
+        }
+    }
+
+    private func writeStage(_ paperId: Int, _ stage: Stage, _ reason: String) {
         do {
             try db.run("UPDATE papers SET stage=?, exclude_reason=? WHERE id=?", [stage.rawValue, reason, paperId])
             reloadPapers()
@@ -607,11 +650,26 @@ final class Store: ObservableObject {
             let id = try db.run("INSERT INTO tags (project_id,name,color,kind,detail,sort_order,shortcut) VALUES (?,?,?,?,?,?,?)",
                                 [currentProjectId, name, color, kind, detail, order, shortcut])
             reloadTags()
+            if let made = tag(Int(id)) {
+                history.record("a new tag",
+                               backwards: { [weak self] in self?.removeTagRow(made.id) },
+                               forwards: { [weak self] in self?.restoreTag(made) })
+            }
             return Int(id)
         } catch { fail(error, "Adding tag"); return 0 }
     }
 
-    func updateTag(_ t: Tag) {
+    func updateTag(_ t: Tag, recordUndo: Bool = true) {
+        let before = tag(t.id)
+        writeTag(t)
+        if recordUndo, let before, before != t {
+            history.record("a tag change",
+                           backwards: { [weak self] in self?.writeTag(before) },
+                           forwards: { [weak self] in self?.writeTag(t) })
+        }
+    }
+
+    private func writeTag(_ t: Tag) {
         do {
             try db.run("UPDATE tags SET name=?, color=?, kind=?, detail=?, shortcut=?, sort_order=? WHERE id=?",
                        [t.name, t.colorHex, t.kind, t.detail, t.shortcut, t.sortOrder, t.id])
@@ -620,8 +678,33 @@ final class Store: ObservableObject {
     }
 
     func deleteTag(_ id: Int) {
+        guard let gone = tag(id) else { return }
+        // Which highlights carried the tag, so undo puts the colour back on them.
+        let tagged = evidence.filter { $0.tagIds.contains(id) }.map(\.id)
+        removeTagRow(id)
+        history.record("deleting a tag", backwards: { [weak self] in
+            guard let self else { return }
+            self.restoreTag(gone)
+            for eid in tagged {
+                try? self.db.run("INSERT OR IGNORE INTO evidence_tags VALUES (?,?)", [eid, gone.id])
+            }
+            self.reloadEvidence()
+        }, forwards: { [weak self] in self?.removeTagRow(id) })
+    }
+
+    private func removeTagRow(_ id: Int) {
         do { try db.run("DELETE FROM tags WHERE id=?", [id]); reloadTags(); reloadEvidence() }
         catch { fail(error, "Deleting tag") }
+    }
+
+    private func restoreTag(_ t: Tag) {
+        do {
+            try db.run("""
+                INSERT OR REPLACE INTO tags (id, project_id, name, color, kind, detail, sort_order, shortcut)
+                VALUES (?,?,?,?,?,?,?,?)
+                """, [t.id, t.projectId, t.name, t.colorHex, t.kind, t.detail, t.sortOrder, t.shortcut])
+            reloadTags(); reloadEvidence()
+        } catch { fail(error, "Restoring tag") }
     }
 
     func moveTag(_ id: Int, up: Bool) {
@@ -631,8 +714,16 @@ final class Store: ObservableObject {
         let j = up ? i - 1 : i + 1
         guard peers.indices.contains(j) else { return }
         var a = peers[i], b = peers[j]
+        let beforeA = a, beforeB = b
         swap(&a.sortOrder, &b.sortOrder)
-        updateTag(a); updateTag(b)
+        let afterA = a, afterB = b
+        updateTag(afterA, recordUndo: false); updateTag(afterB, recordUndo: false)
+        // Reordering is one action to the eye, so it is one step to undo.
+        history.record("reordering tags", backwards: { [weak self] in
+            self?.updateTag(beforeA, recordUndo: false); self?.updateTag(beforeB, recordUndo: false)
+        }, forwards: { [weak self] in
+            self?.updateTag(afterA, recordUndo: false); self?.updateTag(afterB, recordUndo: false)
+        })
     }
 
     // MARK: - Evidence
@@ -665,12 +756,37 @@ final class Store: ObservableObject {
                                 confidence: Confidence(rawValue: r.string("confidence") ?? "") ?? .medium,
                                 verification: Verification(rawValue: r.string("verification") ?? "") ?? .unchecked)
             }
+            rebuildEvidenceIndexes()
         } catch { fail(error, "Loading highlights") }
     }
 
-    func evidence(forPaper id: Int) -> [Evidence] {
-        evidence.filter { $0.paperId == id }.sorted { ($0.page, $0.createdAt) < ($1.page, $1.createdAt) }
+    private func rebuildEvidenceIndexes() {
+        var byPaper: [Int: [Evidence]] = [:]
+        var byTag: [Int: Int] = [:]
+        for e in evidence {
+            byPaper[e.paperId, default: []].append(e)
+            for t in e.tagIds { byTag[t, default: 0] += 1 }
+        }
+        for (k, v) in byPaper {
+            byPaper[k] = v.sorted { ($0.page, $0.createdAt) < ($1.page, $1.createdAt) }
+        }
+        evidenceByPaper = byPaper
+        evidenceCountByPaper = byPaper.mapValues(\.count)
+        evidenceCountByTag = byTag
     }
+
+    /// In page order — the order the passages appear in the document.
+    func evidence(forPaper id: Int) -> [Evidence] { evidenceByPaper[id] ?? [] }
+
+    /// Newest first. What you just marked is what you most likely want to annotate or undo,
+    /// and hunting for it at the bottom of a long list is the single most repeated
+    /// annoyance in a long reading session.
+    func evidenceNewestFirst(forPaper id: Int) -> [Evidence] {
+        (evidenceByPaper[id] ?? []).sorted { $0.createdAt > $1.createdAt }
+    }
+
+    func evidenceCount(forPaper id: Int) -> Int { evidenceCountByPaper[id] ?? 0 }
+    func evidenceCount(forTag id: Int) -> Int { evidenceCountByTag[id] ?? 0 }
 
     @discardableResult
     func addEvidence(paperId: Int, page: Int, quote: String, note: String = "", color: String,
@@ -685,11 +801,29 @@ final class Store: ObservableObject {
                       ai, kind.rawValue, stance.rawValue])
             for t in tagIds { try db.run("INSERT OR IGNORE INTO evidence_tags VALUES (?,?)", [Int(id), t]) }
             reloadEvidence()
+
+            // Undo puts the row back with the same id, so a highlight you undo and redo is
+            // still the same highlight — the note you attached to it survives the round trip.
+            if let made = evidence(Int(id)) {
+                history.record("highlight",
+                               backwards: { [weak self] in self?.removeEvidenceRow(made.id) },
+                               forwards: { [weak self] in self?.restoreEvidence(made) })
+            }
             return Int(id)
         } catch { fail(error, "Saving highlight"); return 0 }
     }
 
-    func updateEvidence(_ e: Evidence) {
+    func updateEvidence(_ e: Evidence, undoName: String = "edit", coalesceKey: String? = nil) {
+        let before = evidence(e.id)
+        writeEvidence(e)
+        if let before, before != e {
+            history.record(undoName, coalesceKey: coalesceKey,
+                           backwards: { [weak self] in self?.writeEvidence(before) },
+                           forwards: { [weak self] in self?.writeEvidence(e) })
+        }
+    }
+
+    private func writeEvidence(_ e: Evidence) {
         do {
             try db.run("""
                 UPDATE evidence SET quote=?, note=?, color=?, page=?, rects=?, ai_generated=?,
@@ -704,8 +838,37 @@ final class Store: ObservableObject {
     }
 
     func deleteEvidence(_ id: Int) {
-        do { try db.run("DELETE FROM evidence WHERE id=?", [id]); reloadEvidence() }
+        guard let gone = evidence(id) else { return }
+        let links = relations(for: .evidence, id)
+        removeEvidenceRow(id)
+        history.record("deleting a highlight", backwards: { [weak self] in
+            guard let self else { return }
+            self.restoreEvidence(gone)
+            for r in links { self.restoreRelation(r) }
+        }, forwards: { [weak self] in self?.removeEvidenceRow(id) })
+    }
+
+    private func removeEvidenceRow(_ id: Int) {
+        do { try db.run("DELETE FROM evidence WHERE id=?", [id]); reloadEvidence(); reloadRelations() }
         catch { fail(error, "Deleting highlight") }
+    }
+
+    /// Re-inserts a highlight under the id it had before, which is what keeps redo, the PDF
+    /// annotations and any links pointing at it all agreeing with each other.
+    private func restoreEvidence(_ e: Evidence) {
+        do {
+            try db.run("""
+                INSERT OR REPLACE INTO evidence
+                    (id, project_id, paper_id, page, quote, note, color, rects, created_at,
+                     ai_generated, kind, stance, confidence, verification)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, [e.id, e.projectId, e.paperId, e.page, e.quote, e.note, e.colorHex,
+                      Store.encodeRects(e.rects), e.createdAt, e.aiGenerated, e.kind.rawValue,
+                      e.stance.rawValue, e.confidence.rawValue, e.verification.rawValue])
+            try db.run("DELETE FROM evidence_tags WHERE evidence_id=?", [e.id])
+            for t in e.tagIds { try db.run("INSERT OR IGNORE INTO evidence_tags VALUES (?,?)", [e.id, t]) }
+            reloadEvidence()
+        } catch { fail(error, "Restoring highlight") }
     }
 
     static func encodeRects(_ rects: [CGRect]) -> String {
@@ -1008,8 +1171,31 @@ final class Store: ObservableObject {
     }
 
     func deleteRelation(_ id: Int) {
+        let gone = relations.first { $0.id == id }
+        removeRelationRow(id)
+        if let gone {
+            history.record("removing a link",
+                           backwards: { [weak self] in self?.restoreRelation(gone) },
+                           forwards: { [weak self] in self?.removeRelationRow(id) })
+        }
+    }
+
+    private func removeRelationRow(_ id: Int) {
         do { try db.run("DELETE FROM relations WHERE id=?", [id]); reloadRelations() }
         catch { fail(error, "Removing link") }
+    }
+
+    /// Links are restored under their original id too, so undoing a deleted highlight brings
+    /// back the argument it was part of, not an orphan.
+    func restoreRelation(_ r: Relation) {
+        do {
+            try db.run("""
+                INSERT OR REPLACE INTO relations
+                    (id, project_id, from_kind, from_id, type, to_kind, to_id, note, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                """, [r.id, r.projectId, r.fromKind, r.fromId, r.type, r.toKind, r.toId, r.note, r.createdAt])
+            reloadRelations()
+        } catch { fail(error, "Restoring link") }
     }
 
     /// Every link touching a node, in either direction.

@@ -220,9 +220,9 @@ struct DashboardView: View {
                         .font(D.small).foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
-                        let maxN = store.tags.map { t in store.evidence.filter { $0.tagIds.contains(t.id) }.count }.max() ?? 1
+                        let maxN = store.tags.map { store.evidenceCount(forTag: $0.id) }.max() ?? 1
                         ForEach(store.tags) { t in
-                            let n = store.evidence.filter { $0.tagIds.contains(t.id) }.count
+                            let n = store.evidenceCount(forTag: t.id)
                             if n > 0 {
                                 HStack(spacing: 6) {
                                     Text(t.name).font(D.small).frame(width: 96, alignment: .leading).lineLimit(1)

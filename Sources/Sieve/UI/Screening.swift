@@ -635,28 +635,34 @@ struct ScreeningView: View {
         VStack(alignment: .leading, spacing: D.s3) {
             editor("Conclusion — what this paper actually concludes",
                    "In your own words. Carried into the report and the export.",
-                   text: Binding(get: { p.conclusion },
-                                 set: { var q = p; q.conclusion = $0; store.updatePaper(q) }),
-                   height: 78)
+                   text: field(p, \.conclusion, "conclusion"), height: 78)
             editor("What I still need to read in it",
                    "Sections worth going back to, questions left open.",
-                   text: Binding(get: { p.toRead },
-                                 set: { var q = p; q.toRead = $0; store.updatePaper(q) }),
-                   height: 60)
-            editor("Notes", "",
-                   text: Binding(get: { p.notes },
-                                 set: { var q = p; q.notes = $0; store.updatePaper(q) }),
-                   height: 60)
+                   text: field(p, \.toRead, "what is left to read"), height: 60)
+            editor("Notes", "", text: field(p, \.notes, "notes"), height: 60)
         }
         .frame(maxWidth: 760, alignment: .leading)
+    }
+
+    /// Writes on a pause rather than on every keystroke, so the paper is not reloaded
+    /// underneath the insertion point while you are still using it. See `StableTextEditor`.
+    private func field(_ p: Paper, _ path: WritableKeyPath<Paper, String>,
+                       _ name: String) -> Binding<String> {
+        Binding(get: { p[keyPath: path] },
+                set: { value in
+                    var q = p
+                    q[keyPath: path] = value
+                    store.updatePaper(q, undoName: "an edit to \(name)",
+                                      coalesceKey: "paper-\(p.id)-\(name)")
+                })
     }
 
     private func editor(_ label: String, _ hint: String, text: Binding<String>, height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             SectionLabel(text: label)
             if !hint.isEmpty { Text(hint).font(.system(size: 10)).foregroundStyle(.tertiary) }
-            TextEditor(text: text)
-                .font(D.body).frame(height: height).padding(4)
+            StableTextEditor(text: text)
+                .frame(height: height)
                 .background(D.surface).clipShape(RoundedRectangle(cornerRadius: D.radius))
                 .hairlineBorder()
         }
@@ -861,6 +867,12 @@ struct ShortcutSheet: View {
         .init(keys: ["I"], what: "Record as interpretation", note: "What you think"),
         .init(keys: ["Q"], what: "Record as a question", note: "What you don't know yet"),
         .init(keys: ["["], what: "Previous paper", note: "] for the next one"),
+        .init(keys: ["N"], what: "Write a note on the last highlight", note: "No scrolling to find it"),
+        .init(keys: ["F"], what: "Reading mode", note: "Every panel away; ⌃⌘F anywhere"),
+        .init(keys: ["H"], what: "Hide or show your highlights", note: "Read the page clean"),
+        .init(keys: ["+", "−"], what: "Zoom in and out", note: "Zoom is kept per paper"),
+        .init(keys: ["0"], what: "Fit the width", note: ""),
+        .init(keys: ["esc"], what: "Close the note, then the selection, then reading mode", note: ""),
         .init(keys: ["⌘", "F"], what: "Find in the document", note: ""),
     ]
 
@@ -869,6 +881,10 @@ struct ShortcutSheet: View {
         .init(keys: ["⌘", "O"], what: "Import PDFs", note: ""),
         .init(keys: ["⌘", "⇧", "I"], what: "Import .bib / .ris", note: ""),
         .init(keys: ["⌘", "⇧", "N"], what: "New review", note: ""),
+        .init(keys: ["⌘", "Z"], what: "Undo", note: "The note you are typing first, then the library"),
+        .init(keys: ["⌘", "⇧", "Z"], what: "Redo", note: ""),
+        .init(keys: ["⌃", "⌘", "F"], what: "Reading mode", note: "Works from any screen"),
+        .init(keys: ["⌃", "⌘", "H"], what: "Hide or show your highlights", note: ""),
     ]
 
     var body: some View {

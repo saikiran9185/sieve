@@ -162,6 +162,44 @@ nothing.
 The extracted conclusion appears in screening beside the abstract, with one click to adopt
 it as your own starting point.
 
+## Reading mode, and getting your place back
+
+The reader is built for the screen you actually have. On a 13-inch laptop the two panels
+either side of a document take more room than the document does, so **⌃⌘F** (or `F` in the
+reader) takes all of it away — sidebar, method bar, paper list, inspector — and leaves the
+page. The controls come back as a faint bar over the top of the page that brightens when you
+reach for it, and the colours appear over the page only while text is selected. Nothing that
+appears resizes the document, which is the point: a control that changes the layout also
+changes the zoom.
+
+**⌃⌘H** hides your own highlights, so you can re-read a passage as the publisher set it
+rather than as you have already marked it.
+
+**Your place is kept per paper** — the page, the zoom and the position down the page — and
+restored when you come back to it, whether that is after a glance at another paper or after
+a relaunch. Sieve reopens on the screen and the paper you left. Zoom stays where you put it:
+it is no longer refitted when a pane changes width, when you select a passage, or when you
+save a highlight.
+
+## Undo
+
+**⌘Z** and **⇧⌘Z**, everywhere, with buttons in the reader, the highlights panel, the
+evidence board and the tag screen. Highlights, notes, deletions, categories, screening
+decisions, tags and links are all reversible, and a deleted highlight comes back with the
+same identity — so the note attached to it, and the links pointing at it, come back too.
+
+Inside a note box ⌘Z belongs to the note: it undoes your typing, word by word, and only
+falls through to the library when you are not typing.
+
+## Writing notes on what you marked
+
+The note for a passage opens **on the passage**, in a small box over the page, the moment you
+mark it. It is prefilled with the right highlight and closes with `esc`. Writing a note no
+longer means finding the highlight at the bottom of a list that grows all day — and neither
+does deleting one you made by mistake, which is a button on the same box.
+
+The highlights panel lists the **newest first** by default, with one click for page order.
+
 ## Try it in a browser first
 
 **<https://saikiran9185.github.io/sieve/>**

@@ -6,11 +6,12 @@ import AppKit
 struct InspectorPanel: View {
     let paper: Paper?
     @ObservedObject var controller: PDFController
+    /// The reader's note box. Setting it from here opens the note on the passage itself.
+    var focusEvidenceId: Binding<Evidence?>? = nil
     @EnvironmentObject var store: Store
     @EnvironmentObject var assistant: Assistant
     @State private var tab = 0
-    @State private var editingNote: Int? = nil
-    @State private var noteDraft = ""
+    @AppStorage("sieve.highlightOrder") private var newestFirst: Bool = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,32 +39,57 @@ struct InspectorPanel: View {
     // MARK: Highlights
 
     private func highlights(_ p: Paper) -> some View {
-        let items = store.evidence(forPaper: p.id)
+        // Newest first by default. In page order the highlight you just made is the one
+        // furthest from the top of the panel, so adding a note to it, or deleting one you
+        // made by mistake, meant scrolling the length of a day's reading first.
+        let items = newestFirst ? store.evidenceNewestFirst(forPaper: p.id)
+                                : store.evidence(forPaper: p.id)
         return Group {
             if items.isEmpty {
                 EmptyState(icon: "highlighter",
                            title: "No highlights yet",
                            message: "Select text in the PDF and click a colour above — or press its number key. Each highlight is stored with its page, its colour category, and the paper it came from.")
             } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: D.s2) {
-                        HStack {
-                            Text("\(items.count) highlight\(items.count == 1 ? "" : "s")")
-                                .font(D.small).foregroundStyle(.secondary)
-                            Spacer()
-                            Menu {
-                                Button("Copy all as quotes") { copyAll(items, p) }
-                                Button("Copy as Markdown") { copyMarkdown(items, p) }
-                            } label: { Image(systemName: "square.and.arrow.up") }
-                                .menuStyle(.borderlessButton).frame(width: 28)
-                        }
-                        ForEach(items) { e in
-                            EvidenceCard(evidence: e, paper: p, compact: true) {
-                                controller.reveal(e)
+                VStack(spacing: 0) {
+                    HStack(spacing: D.s2) {
+                        Text("\(items.count) highlight\(items.count == 1 ? "" : "s")")
+                            .font(D.small).foregroundStyle(.secondary)
+                        Spacer()
+                        UndoRedoButtons(history: store.history, store: store)
+                        Button { newestFirst.toggle() } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: newestFirst ? "arrow.down" : "text.book.closed")
+                                    .font(.system(size: 9)).accessibilityHidden(true)
+                                Text(newestFirst ? "Newest" : "In order").font(.system(size: 10))
                             }
                         }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                        .help(newestFirst ? "Showing the most recent first — click for page order"
+                                          : "Showing them in page order — click for most recent first")
+                        Menu {
+                            Button("Copy all as quotes") { copyAll(items, p) }
+                            Button("Copy as Markdown") { copyMarkdown(items, p) }
+                        } label: {
+                            Image(systemName: "square.and.arrow.up").accessibilityHidden(true)
+                        }
+                        .menuStyle(.borderlessButton).frame(width: 28)
+                        .accessibilityLabel("Copy these highlights")
                     }
-                    .padding(D.s3)
+                    .padding(.horizontal, D.s3).padding(.vertical, 6)
+                    Divider()
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: D.s2) {
+                            ForEach(items) { e in
+                                EvidenceCard(evidence: e, paper: p, compact: true,
+                                             onNote: focusEvidenceId.map { binding in
+                                                 { binding.wrappedValue = e }
+                                             }) {
+                                    controller.reveal(e)
+                                }
+                            }
+                        }
+                        .padding(D.s3)
+                    }
                 }
             }
         }
@@ -147,32 +173,32 @@ struct InspectorPanel: View {
                 }
             }
 
-            field("Conclusion — what this paper concludes",
-                  binding: Binding(get: { p.conclusion },
-                                   set: { var q = p; q.conclusion = $0; store.updatePaper(q) }),
-                  height: 90)
-            field("What I still need to read in it",
-                  binding: Binding(get: { p.toRead },
-                                   set: { var q = p; q.toRead = $0; store.updatePaper(q) }),
-                  height: 60)
-            field("My notes on this paper",
-                  binding: Binding(get: { p.notes },
-                                   set: { var q = p; q.notes = $0; store.updatePaper(q) }),
-                  height: 90)
+            // These write through `StableTextEditor`, which is the only reason they can be
+            // edited at all: bound straight to the store, every keystroke reloaded the paper
+            // and handed the text view its value back, so the insertion point jumped to the
+            // end and correcting a word in the middle rewrote the rest of the paragraph.
+            field("Conclusion — what this paper concludes", p, \.conclusion, height: 90,
+                  placeholder: "What does it actually conclude?")
+            field("What I still need to read in it", p, \.toRead, height: 60,
+                  placeholder: "Sections you have not got to yet")
+            field("My notes on this paper", p, \.notes, height: 90,
+                  placeholder: "Your own reading of it")
         }
     }
 
-    private func field(_ label: String, binding: Binding<String>, height: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            SectionLabel(text: label)
-            TextEditor(text: binding)
-                .font(D.body)
-                .frame(minHeight: height)
-                .padding(4)
-                .background(D.surface)
-                .clipShape(RoundedRectangle(cornerRadius: D.radius))
-                .hairlineBorder()
-        }
+    private func field(_ label: String, _ p: Paper, _ path: WritableKeyPath<Paper, String>,
+                       height: CGFloat, placeholder: String = "") -> some View {
+        NoteField(label: label,
+                  text: Binding(get: { p[keyPath: path] },
+                                set: { value in
+                                    var q = p
+                                    q[keyPath: path] = value
+                                    // One undo step per field per burst of typing.
+                                    store.updatePaper(q, undoName: "an edit to \(label.lowercased())",
+                                                      coalesceKey: "paper-\(p.id)-\(label)")
+                                }),
+                  height: height,
+                  placeholder: placeholder)
     }
 
     private func kv(_ k: String, _ v: String) -> some View {
@@ -286,13 +312,14 @@ struct EvidenceCard: View {
     let evidence: Evidence
     let paper: Paper?
     var compact = false
+    /// Where the reader wants the note written — over the passage, not down here.
+    var onNote: (() -> Void)? = nil
     var onJump: (() -> Void)? = nil
 
     @EnvironmentObject var store: Store
     @EnvironmentObject var nav: Navigator
     @State private var editing = false
-    @State private var noteDraft = ""
-    @State private var quoteDraft = ""
+    @State private var showActions = false
     @State private var relating = false
 
     private var tags: [Tag] { evidence.tagIds.compactMap { store.tag($0) } }
@@ -314,79 +341,45 @@ struct EvidenceCard: View {
                 if evidence.page >= 0 {
                     Text("p.\(evidence.page + 1)").font(D.mono).foregroundStyle(.tertiary)
                 }
+                // Writing a note is the common case, so it is a button on the row rather
+                // than an item three levels into a menu.
+                Button {
+                    if let onNote { onNote() } else { editing.toggle() }
+                } label: {
+                    Image(systemName: evidence.note.isEmpty ? "text.bubble" : "text.bubble.fill")
+                        .font(.system(size: 10)).accessibilityHidden(true)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(evidence.note.isEmpty ? Color.secondary.opacity(0.55) : Palette.accent)
+                .help(evidence.note.isEmpty ? "Write a note on this passage" : "Edit your note")
+                .accessibilityLabel("Note")
+
                 Button {
                     store.deleteEvidence(evidence.id)
-                    store.flash("Highlight removed")
+                    store.flash("Highlight removed — ⌘Z brings it back")
                 } label: {
-                    Image(systemName: "trash").font(.system(size: 10))
+                    Image(systemName: "trash").font(.system(size: 10)).accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondary.opacity(0.55))
-                .help("Delete this highlight — it disappears from the PDF too")
+                .help("Delete this highlight — ⌘Z undoes it")
+                .accessibilityLabel("Delete this highlight")
 
-                Menu {
-                    if evidence.hasLocation {
-                        Button("Jump to it in the PDF") {
-                            if let onJump { onJump() } else if let p = paper { nav.read(p.id) }
-                        }
-                    }
-                    Button("Edit note") { noteDraft = evidence.note; quoteDraft = evidence.quote; editing = true }
-                    Button("Link to other evidence…") { relating = true }
-                    Divider()
-                    Menu("This is") {
-                        ForEach(Stance.allCases) { st in
-                            Button(st == evidence.stance ? "✓ \(st.label)" : st.label) {
-                                var e = evidence; e.stance = st; store.updateEvidence(e)
-                            }
-                        }
-                    }
-                    Menu("Kind") {
-                        ForEach(EvidenceKind.allCases) { k in
-                            Button(k == evidence.kind ? "✓ \(k.label)" : k.label) {
-                                var e = evidence; e.kind = k; store.updateEvidence(e)
-                            }
-                        }
-                    }
-                    Menu("Confidence") {
-                        ForEach(Confidence.allCases) { c in
-                            Button(c == evidence.confidence ? "✓ \(c.label)" : c.label) {
-                                var e = evidence; e.confidence = c; store.updateEvidence(e)
-                            }
-                        }
-                    }
-                    Menu("Status") {
-                        ForEach(Verification.allCases) { v in
-                            Button(v == evidence.verification ? "✓ \(v.label)" : v.label) {
-                                var e = evidence; e.verification = v; store.updateEvidence(e)
-                            }
-                        }
-                    }
-                    Menu("Change category") {
-                        ForEach(store.categoryTags) { t in
-                            Button(t.name) {
-                                var e = evidence; e.tagIds = [t.id]; e.colorHex = t.colorHex
-                                store.updateEvidence(e)
-                            }
-                        }
-                    }
-                    Menu("Add data type") {
-                        ForEach(store.dataTypeTags) { t in
-                            Button(t.name) {
-                                var e = evidence
-                                if !e.tagIds.contains(t.id) { e.tagIds.append(t.id) }
-                                store.updateEvidence(e)
-                            }
-                        }
-                    }
-                    Button("Copy quote") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("“\(evidence.quote)” (\(paper?.citeKey ?? ""), p.\(evidence.page + 1))",
-                                                       forType: .string)
-                    }
-                    Divider()
-                    Button("Delete", role: .destructive) { store.deleteEvidence(evidence.id) }
-                } label: { Image(systemName: "ellipsis") }
-                    .menuStyle(.borderlessButton).frame(width: 22)
+                // A popover, not a menu.
+                //
+                // As a `Menu` this list was built as part of the card's body: six submenus,
+                // each iterating every stance, kind, confidence, status and tag in the review.
+                // Forty-odd live menu items per card, rebuilt on every layout pass, times every
+                // card on screen — the window spent minutes unresponsive assembling item lists
+                // and resolving their accessibility text for menus nobody had opened. Popover
+                // content is only built when it is actually shown.
+                Button { showActions = true } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 10)).accessibilityHidden(true)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.secondary.opacity(0.55))
+                .accessibilityLabel("More actions")
+                .popover(isPresented: $showActions, arrowEdge: .bottom) { actions }
             }
 
             Text(evidence.quote)
@@ -398,11 +391,17 @@ struct EvidenceCard: View {
                     Rectangle().fill(Color(hex: evidence.colorHex)).frame(width: 3)
                 }
 
-            if !evidence.note.isEmpty {
+            if editing {
+                // Editing happens in place. A popover had to copy the quote and the note into
+                // its own state as it opened, and the copy landed a beat after the popover did
+                // — which is why the passage stayed blank until the first keystroke.
+                InlineEvidenceEditor(evidence: evidence) { editing = false }
+            } else if !evidence.note.isEmpty {
                 Text(evidence.note)
                     .font(D.small)
                     .foregroundStyle(.secondary)
                     .padding(.leading, D.s2)
+                    .onTapGesture { if let onNote { onNote() } else { editing = true } }
             }
 
             // Typed links are what turn highlights into an argument.
@@ -476,24 +475,157 @@ struct EvidenceCard: View {
         .sheet(isPresented: $relating) {
             RelationEditor(from: evidence) { relating = false }
         }
-        .popover(isPresented: $editing) {
-            VStack(alignment: .leading, spacing: D.s3) {
-                SectionLabel(text: "Quoted text")
-                TextEditor(text: $quoteDraft).font(D.serif).frame(height: 90).hairlineBorder()
-                SectionLabel(text: "My note — why this matters")
-                TextEditor(text: $noteDraft).font(D.body).frame(height: 90).hairlineBorder()
-                HStack {
-                    Spacer()
-                    Button("Cancel") { editing = false }
-                    Button("Save") {
-                        var e = evidence; e.note = noteDraft; e.quote = quoteDraft
-                        store.updateEvidence(e); editing = false
-                    }
-                    .buttonStyle(.borderedProminent)
+    }
+
+    /// Built only when the button is pressed — see the note on the button itself.
+    private var actions: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if evidence.hasLocation {
+                actionRow("Go to it in the PDF", "arrow.right.doc.on.clipboard") {
+                    if let onJump { onJump() } else if let p = paper { nav.read(p.id) }
                 }
             }
-            .padding(D.s4).frame(width: 420)
+            actionRow("Edit the quote and the note", "pencil") {
+                showActions = false; editing = true
+            }
+            actionRow("Link to other evidence…", "arrow.triangle.branch") {
+                showActions = false; relating = true
+            }
+            actionRow("Copy the quote", "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString("“\(evidence.quote)” (\(paper?.citeKey ?? ""), p.\(evidence.page + 1))",
+                                               forType: .string)
+                showActions = false
+            }
+            Divider().padding(.vertical, 3)
+
+            picker("This is", Stance.allCases, current: evidence.stance) { st in
+                var e = evidence; e.stance = st; store.updateEvidence(e, undoName: "a stance change")
+            } label: { $0.label } tint: { $0.color }
+
+            picker("Kind", EvidenceKind.allCases, current: evidence.kind) { k in
+                var e = evidence; e.kind = k; store.updateEvidence(e, undoName: "a kind change")
+            } label: { $0.label } tint: { _ in Palette.slate }
+
+            picker("Confidence", Confidence.allCases, current: evidence.confidence) { c in
+                var e = evidence; e.confidence = c; store.updateEvidence(e, undoName: "a confidence change")
+            } label: { $0.label } tint: { _ in Palette.slate }
+
+            picker("Status", Verification.allCases, current: evidence.verification) { v in
+                var e = evidence; e.verification = v; store.updateEvidence(e, undoName: "a status change")
+            } label: { $0.label } tint: { $0.color }
+
+            if !store.categoryTags.isEmpty {
+                SectionLabel(text: "Category").padding(.top, 4)
+                FlowRow(spacing: 4) {
+                    ForEach(store.categoryTags) { t in
+                        Button {
+                            var e = evidence; e.tagIds = [t.id]; e.colorHex = t.colorHex
+                            store.updateEvidence(e, undoName: "a category change")
+                        } label: {
+                            Chip(text: t.name, color: t.color, filled: evidence.tagIds.first == t.id)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if !store.dataTypeTags.isEmpty {
+                SectionLabel(text: "Data type").padding(.top, 4)
+                FlowRow(spacing: 4) {
+                    ForEach(store.dataTypeTags) { t in
+                        Button {
+                            var e = evidence
+                            if let i = e.tagIds.firstIndex(of: t.id) { e.tagIds.remove(at: i) }
+                            else { e.tagIds.append(t.id) }
+                            store.updateEvidence(e, undoName: "a data type change")
+                        } label: {
+                            Chip(text: t.name, color: t.color, filled: evidence.tagIds.contains(t.id))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Divider().padding(.vertical, 3)
+            actionRow("Delete this highlight", "trash", destructive: true) {
+                showActions = false
+                store.deleteEvidence(evidence.id)
+                store.flash("Highlight removed — ⌘Z brings it back")
+            }
         }
+        .padding(D.s3)
+        .frame(width: 300)
+    }
+
+    private func actionRow(_ title: String, _ icon: String, destructive: Bool = false,
+                           action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 10)).frame(width: 14)
+                    .accessibilityHidden(true)
+                Text(title).font(D.small)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+            .padding(.vertical, 3).padding(.horizontal, 4)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(destructive ? Color.red : Color.primary)
+    }
+
+    private func picker<T: Hashable & Identifiable>(_ title: String, _ options: [T], current: T,
+                                                    set: @escaping (T) -> Void,
+                                                    label: @escaping (T) -> String,
+                                                    tint: @escaping (T) -> Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            SectionLabel(text: title)
+            FlowRow(spacing: 4) {
+                ForEach(options) { o in
+                    Button { set(o) } label: {
+                        Chip(text: label(o), color: tint(o), filled: o == current)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.top, 3)
+    }
+}
+
+/// Correcting a quote or writing a note, in the card itself.
+struct InlineEvidenceEditor: View {
+    let evidence: Evidence
+    var done: () -> Void
+    @EnvironmentObject var store: Store
+    @State private var quote: String = ""
+    @State private var note: String = ""
+    @State private var loaded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: D.s2) {
+            NoteField(label: "Quoted text", text: $quote, height: 66,
+                      font: .systemFont(ofSize: 13), onCommit: { _ in save() })
+            NoteField(label: "My note — why this matters", text: $note, height: 66,
+                      placeholder: "Why does this matter?", onCommit: { _ in save() })
+            HStack {
+                Text("Saves as you type · ⌘Z undoes")
+                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                Spacer()
+                Button("Done") { save(); done() }.font(D.small)
+            }
+        }
+        .id(evidence.id)
+        .onAppear { quote = evidence.quote; note = evidence.note; loaded = true }
+    }
+
+    private func save() {
+        guard loaded else { return }
+        guard quote != evidence.quote || note != evidence.note else { return }
+        var e = evidence
+        e.quote = quote
+        e.note = note
+        store.updateEvidence(e, undoName: "a note", coalesceKey: "evidence-\(evidence.id)")
     }
 }
 

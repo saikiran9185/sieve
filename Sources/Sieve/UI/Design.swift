@@ -63,14 +63,24 @@ struct Chip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if let icon { Image(systemName: icon).font(.system(size: 9, weight: .bold)) }
-            else if !filled { Circle().fill(color).frame(width: 6, height: 6) }
+            // The symbol is decoration beside a label that already says what this is.
+            // Left visible to accessibility, SwiftUI resolves a spoken description for the
+            // symbol name on every layout pass, and each resolution opens a bundle off disk.
+            // A chip is drawn tens of times per screen, so that lookup was a measurable part
+            // of why laying out a full board could take the window out of service.
+            if let icon {
+                Image(systemName: icon).font(.system(size: 9, weight: .bold))
+                    .accessibilityHidden(true)
+            } else if !filled {
+                Circle().fill(color).frame(width: 6, height: 6).accessibilityHidden(true)
+            }
             Text(text).font(D.small.weight(.medium)).lineLimit(1)
         }
         .padding(.horizontal, 7).padding(.vertical, 3)
         .background(filled ? color.opacity(0.92) : color.opacity(0.16))
         .foregroundStyle(filled ? Color.white : color)
         .clipShape(Capsule())
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(text)
     }
 }

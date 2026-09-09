@@ -137,7 +137,7 @@ struct MatrixView: View {
 
             HStack(spacing: 4) {
                 StageBadge(stage: p.stage)
-                let n = store.evidence(forPaper: p.id).count
+                let n = store.evidenceCount(forPaper: p.id)
                 if n > 0 { Chip(text: "\(n)", color: Palette.amber, icon: "highlighter") }
                 Spacer()
             }
@@ -346,9 +346,9 @@ struct CellEditor: View {
                 }
             }
 
-            TextEditor(text: $text)
-                .font(D.body).frame(height: 110)
-                .padding(4).background(D.surface)
+            StableTextEditor(text: $text)
+                .frame(height: 110)
+                .background(D.surface)
                 .clipShape(RoundedRectangle(cornerRadius: D.radius)).hairlineBorder()
 
             let ev = store.evidence(forPaper: paper.id)

@@ -16,6 +16,7 @@ struct TagsView: View {
                 Text("Four independent axes. A passage can be a Finding, about Trust, marked Important, and Qualitative — all at once.")
                     .font(D.small).foregroundStyle(.secondary)
                 Spacer()
+                UndoRedoButtons(history: store.history, store: store)
                 Menu {
                     ForEach(TagKind.allCases) { k in
                         Button(k.label) { newKind = k.rawValue; showNew = true }
@@ -70,7 +71,7 @@ struct TagsView: View {
     }
 
     private func tagCard(_ t: Tag) -> some View {
-        let uses = store.evidence.filter { $0.tagIds.contains(t.id) }.count
+        let uses = store.evidenceCount(forTag: t.id)
         return Card(padding: D.s3) {
             VStack(alignment: .leading, spacing: D.s2) {
                 HStack(spacing: D.s2) {

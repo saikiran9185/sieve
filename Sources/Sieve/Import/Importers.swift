@@ -157,7 +157,7 @@ enum Importers {
                 q.extractedConclusion = sections.conclusion
                 q.conclusionHeading = sections.conclusionHeading
             }
-            store.updatePaper(q)
+            store.updatePaper(q, recordUndo: false)
             store.flash(existing.hasPDF
                         ? "Already in this review — details topped up, no copy made"
                         : "Attached the PDF to “\(q.title.prefix(36))…” already in this review")
@@ -183,7 +183,7 @@ enum Importers {
             p.extractedConclusion = sections.conclusion
             p.conclusionHeading = sections.conclusionHeading
             p.fileHash = fingerprint ?? ""
-            store.updatePaper(p)
+            store.updatePaper(p, recordUndo: false)
         }
         return id
     }

@@ -198,7 +198,7 @@ struct MapView: View {
     }
 
     private func radius(_ n: GraphModel.Node) -> CGFloat {
-        let highlights = store.evidence.filter { $0.paperId == n.id }.count
+        let highlights = store.evidenceCount(forPaper: n.id)
         return 6 + min(CGFloat(highlights) * 0.8, 10)
     }
 

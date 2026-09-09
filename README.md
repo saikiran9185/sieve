@@ -171,10 +171,16 @@ a PDF, read it, highlight it — the reading and highlighting core of the app, r
 in the browser.
 
 **There is no account and nothing to log in to.** Your sources, highlights and the PDF files
-themselves are stored in that browser and never uploaded. That is the whole argument of this
-project: a review belongs to the person doing it, and a sign-in screen would mean a server
-holding your reading. "Back up" writes your entire library, PDFs included, to one JSON file
-you keep.
+themselves are stored on your own computer and never uploaded. That is the whole argument of
+this project: a review belongs to the person doing it, and a sign-in screen would mean a
+server holding your reading.
+
+**Coming back to it** is handled properly rather than hoped for. Browsers may evict their own
+storage when a disk fills up, so Sieve requests persistent storage the first time you add a
+paper, and can also mirror everything into **a real folder you choose** — the PDFs as ordinary
+PDFs, the highlights as readable JSON, re-synced as you work. The sidebar always says which
+state you are in. Verified by wiping the entire browser store and restoring from the folder:
+source, highlight and full PDF all returned.
 
 The desktop app is still where the rest lives — the fourteen-database search, PRISMA, the
 matrix, frameworks, the evidence graph, the AI trail. See [web/README.md](web/README.md) for

@@ -8,6 +8,7 @@
 
 import * as db from './db.js';
 import { Reader } from './reader.js';
+import * as store from './storage.js';
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, text) => {
@@ -30,7 +31,89 @@ async function boot() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
-  showStorage();
+  await showSafety();
+}
+
+// ---------------------------------------------------------------- keeping the work
+
+/// Says plainly whether the library is safe, because "it is in your browser" is not an
+/// answer anyone can act on. Three states, in the order they matter.
+async function showSafety() {
+  const dot = $('#safetyDot'), text = $('#safetyText'), btn = $('#folderBtn');
+  const handle = await store.savedFolder(db).catch(() => null);
+  const perm = await store.folderPermission(handle);
+  const persisted = await store.persistenceState();
+
+  if (handle && perm === 'granted') {
+    dot.className = 'dot good';
+    text.textContent = `Copied to ${handle.name}`;
+    btn.textContent = 'Sync now';
+    btn.onclick = () => syncNow(handle);
+  } else if (handle && perm === 'prompt') {
+    // The permission is dropped when the browser restarts and can only be asked for again
+    // from a click, so this has to be a button rather than something automatic.
+    dot.className = 'dot warn';
+    text.textContent = 'Folder needs reconnecting';
+    btn.textContent = `Reconnect ${handle.name}`;
+    btn.onclick = async () => {
+      if (await store.reconnectFolder(handle)) { await syncNow(handle); }
+      else toast('Permission declined — the browser copy is still there');
+      await showSafety();
+    };
+  } else if (persisted === 'persistent') {
+    dot.className = 'dot good';
+    text.textContent = 'Saved on this computer';
+    btn.textContent = store.folderSupported() ? 'Also keep a folder copy' : 'Back up to a file';
+    btn.onclick = store.folderSupported() ? pickFolder : $('#exportBtn').onclick;
+  } else {
+    dot.className = 'dot bad';
+    text.textContent = 'Could be cleared by the browser';
+    btn.textContent = store.folderSupported() ? 'Keep a copy in a folder' : 'Back up to a file';
+    btn.onclick = store.folderSupported() ? pickFolder : $('#exportBtn').onclick;
+  }
+  await showStorage();
+}
+
+async function pickFolder() {
+  try {
+    const handle = await store.chooseFolder(db);
+    await syncNow(handle);
+  } catch (err) {
+    if (err.name !== 'AbortError') toast(err.message || 'Could not use that folder');
+  }
+  await showSafety();
+}
+
+async function syncNow(handle) {
+  if (!state.sources.length) { toast('Nothing to copy yet'); await showSafety(); return; }
+  toast('Copying to your folder…');
+  try {
+    const n = await store.syncFolder(handle, {
+      sources: state.sources, evidence: state.evidence, tags: state.tags,
+      fileFor: (id) => db.get('files', id),
+    });
+    toast(`${n} PDF${n === 1 ? '' : 's'} and an index written to ${handle.name}`);
+  } catch (err) {
+    toast('Could not write to that folder — reconnect it');
+  }
+  await showSafety();
+}
+
+/// Called after anything that changes the library, so the folder copy does not drift.
+let syncTimer = null;
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    const handle = await store.savedFolder(db).catch(() => null);
+    if (!handle) return;
+    if ((await store.folderPermission(handle)) !== 'granted') return;
+    try {
+      await store.syncFolder(handle, {
+        sources: state.sources, evidence: state.evidence, tags: state.tags,
+        fileFor: (id) => db.get('files', id),
+      });
+    } catch {}
+  }, 2500);
 }
 
 async function refresh() {
@@ -145,6 +228,9 @@ function stageChip(stage) {
 // ---------------------------------------------------------------- import
 
 async function addFiles(files) {
+  // Asked here rather than on load: browsers weigh the request on whether the site is
+  // actually used, and a first visit with an empty library is the weakest moment to ask.
+  if (!state.sources.length) await store.requestPersistence().catch(() => {});
   let added = 0, already = 0;
   for (const file of files) {
     if (!/\.pdf$/i.test(file.name)) continue;
@@ -186,7 +272,7 @@ async function addFiles(files) {
   toast(added
     ? `Added ${added} PDF${added === 1 ? '' : 's'}${already ? ` · ${already} already here` : ''}`
     : (already ? 'Already in your library — nothing duplicated' : 'No PDFs in that drop'));
-  showStorage();
+  await showSafety();
 }
 
 // ---------------------------------------------------------------- reader
@@ -246,6 +332,7 @@ async function highlight(tag) {
   drawEvidence();
   renderReaderEvidence();
   await refresh();
+  scheduleSync();
   toast(`Saved as ${tag.name} · page ${geo.page + 1}`);
 }
 
@@ -427,7 +514,24 @@ function wire() {
              JSON.stringify(data), 'application/json');
     toast('Backed up — that file is your whole library');
   };
-  $('#importBtn').onclick = () => $('#jsonInput').click();
+  $('#importBtn').onclick = async () => {
+    const handle = await store.savedFolder(db).catch(() => null);
+    if (handle && store.folderSupported()) {
+      const useFolder = confirm(`Restore from the folder “${handle.name}”?\n\nCancel to pick a backup file instead.`);
+      if (useFolder) {
+        try {
+          if ((await store.folderPermission(handle)) !== 'granted') await store.reconnectFolder(handle);
+          const { index, files } = await store.readFolder(handle);
+          await db.importAll({ format: 'sieve-web/1', ...index, files: [] });
+          for (const f of files) await db.put('files', f);
+          await refresh(); await showSafety();
+          toast(`Restored ${index.sources.length} sources from ${handle.name}`);
+        } catch (err) { toast('Could not read that folder'); }
+        return;
+      }
+    }
+    $('#jsonInput').click();
+  };
   $('#jsonInput').onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = '';
     if (!f) return;

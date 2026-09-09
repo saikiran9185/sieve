@@ -4,10 +4,10 @@
 // on the first visit, so a fix ships and nobody receives it. This tries the network first and
 // falls back to the cache, which keeps the app fully usable with no connection while making
 // sure a newer version is picked up the moment there is one.
-const CACHE = 'sieve-v2';
+const CACHE = 'sieve-v3';
 const ASSETS = [
   './', './index.html', './app.css', './app.js', './db.js', './reader.js',
-  './icon.svg', './manifest.webmanifest',
+  './storage.js', './icon.svg', './manifest.webmanifest',
   './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs',
 ];
 

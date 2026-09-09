@@ -162,6 +162,24 @@ nothing.
 The extracted conclusion appears in screening beside the abstract, with one click to adopt
 it as your own starting point.
 
+## Try it in a browser first
+
+**<https://saikiran9185.github.io/sieve/>**
+
+One click, nothing to install, and it works on Windows, Linux and iPad as well as a Mac. Drop
+a PDF, read it, highlight it — the reading and highlighting core of the app, running entirely
+in the browser.
+
+**There is no account and nothing to log in to.** Your sources, highlights and the PDF files
+themselves are stored in that browser and never uploaded. That is the whole argument of this
+project: a review belongs to the person doing it, and a sign-in screen would mean a server
+holding your reading. "Back up" writes your entire library, PDFs included, to one JSON file
+you keep.
+
+The desktop app is still where the rest lives — the fourteen-database search, PRISMA, the
+matrix, frameworks, the evidence graph, the AI trail. See [web/README.md](web/README.md) for
+exactly what the browser version does and does not do.
+
 ## Install
 
 **macOS 14 or later.** Apple Silicon and Intel.
@@ -243,10 +261,13 @@ database searches you ask for.
 
 ## Windows and Linux
 
-**There is no Windows or Linux build, and there will not be one without a substantial rewrite.**
-This gets asked a lot, so here is the actual measurement rather than an assertion: of 14,261
-lines, **1,933 (14%) are plain Swift** that would compile anywhere. The other 86% is SwiftUI,
-AppKit, PDFKit or CoreText.
+There is no `.exe`, and there will not be one: of 14,261 lines, only **1,933 (14%) are plain
+Swift** that would compile anywhere — the other 86% is SwiftUI, AppKit, PDFKit and CoreText,
+including the entire reader.
+
+**The answer is the browser instead.** <https://saikiran9185.github.io/sieve/> runs the
+reading and highlighting core on any platform, using pdf.js where the desktop app uses PDFKit.
+It is not the whole app, and the section above says what it leaves out.
 
 Sieve's reader is built on **PDFKit** and its interface on **SwiftUI** and **AppKit**, all of
 which are Apple frameworks that exist only on macOS. The PDF reader is not a thin layer over

@@ -56,6 +56,19 @@ file, manually.
 DOAJ, PLOS and OpenAIRE — with records describing the same paper folded into one row, so you
 screen each paper once. Every result carries where it came from and the search that found it.
 
+**Google Scholar and the rest**, by hand-off. Scholar forbids automated querying, BASE limits
+its API to registered institutions, and Scopus, Web of Science, IEEE, ACM, ScienceDirect,
+Springer, JSTOR and Wiley gate search behind institutional agreements. Sieve builds the search
+URL, opens it, and takes the `.bib` or `.ris` you export back — the same route the desktop app
+uses. Files from Zotero, Mendeley or EndNote import the same way: drop them on the page.
+
+**Getting the full text.** *Get the PDF* asks OpenAlex and Unpaywall where a legal free copy
+lives and tries each one, repositories first. Where the host allows a cross-origin read —
+arXiv, Europe PMC, PubMed Central and most institutional repositories do — the file downloads
+straight into your library, its sections are read out of it, and nothing is uploaded anywhere.
+Where the host refuses, Sieve says so and hands you the links to save and drop back. *Get
+missing PDFs* does the whole library at once.
+
 **Screening.** A queue with your inclusion and exclusion terms tinted into each abstract, so
 the words a decision turns on are visible before you read a line. Keyboard-driven, and an
 exclusion asks for its reason because PRISMA needs one.
@@ -94,9 +107,13 @@ which were checked and which were not.
 - Drop PDFs anywhere on the page; they are stored locally and never leave the machine
 - A dropped PDF attaches to the record a search already found, rather than becoming a second
   copy of the same paper; dropping the same file twice does nothing
-- Export highlights as Markdown or CSV, the matrix as CSV, PRISMA as text, the trail as CSV
-- **Back up** writes your entire library — PDFs, matrix, frameworks, method and trail included
-  — to one JSON file you keep
+- **Export** gives you the PRISMA diagram as SVG and PNG, the PRISMA 2020 reporting checklist
+  as CSV, the library as BibTeX and RIS, sources, highlights, matrix and trail as CSV, and a
+  full review report — the question, criteria, searches, flow diagram, every included paper
+  with its evidence, the matrix, the frameworks and the disclosure — which prints to a real
+  vector PDF through the browser's own engine
+- **Back up** writes the whole review as one archive: the PDFs as ordinary PDFs, the report,
+  the diagram, every table, the citation files, and an index. *Restore* takes it back whole
 - Installable, and works with the network off
 
 ## What the desktop app has that this does not

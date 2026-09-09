@@ -184,9 +184,13 @@ PDFs, the highlights as readable JSON, re-synced as you work. The sidebar always
 state you are in. Verified by wiping the entire browser store and restoring from the folder:
 source, highlight and full PDF all returned.
 
-**Two things the browser genuinely cannot do.** It cannot reach CORE or arXiv, which send no
-CORS header, or the four databases behind paid API keys — the seven it can reach are named on
-the search screen, and so are the ones it cannot. And it has no assistant, because running one
+**What the browser cannot do, it hands off rather than hides.** Google Scholar, Scopus, Web of
+Science and the publishers cannot be queried from any browser — Scholar forbids it outright,
+the rest need an institutional agreement — so Sieve opens your search there and imports the
+`.bib` or `.ris` you export back, exactly as the desktop app does. Downloading a PDF works
+wherever the host permits a cross-origin read, which covers arXiv, Europe PMC, PubMed Central
+and most repositories; where it does not, you get the links. CORE and arXiv search send no
+CORS header at all, and four databases need paid keys — all of them named on the search screen. And it has no assistant, because running one
 would mean sending your library to somebody else's computer; what Sieve derives mechanically
 instead is logged in the AI trail and adjudicated by you. Beyond that the desktop app adds
 folders and collections, and XLSX and Word export. See [web/README.md](web/README.md) for the

@@ -4,6 +4,7 @@
 
 import * as db from './db.js';
 import { PROVIDERS, BLOCKED, searchAll, dedupeKey } from './search.js';
+import { EXTERNAL_SITES, siteURL } from './citations.js';
 
 export const el = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -149,9 +150,12 @@ export function renderPrisma(ctx, root) {
   bar.appendChild(el('strong', null, 'PRISMA 2020 flow'));
   bar.appendChild(el('span', 'meta', 'counted from your decisions'));
   bar.appendChild(el('span', 'grow'));
-  const exp = el('button', 'quiet', 'Export text');
-  exp.onclick = () => ctx.download('PRISMA-flow.txt', prismaText(state, p));
+  const exp = el('button', 'quiet', 'Export…');
+  exp.onclick = () => ctx.exportSheet();
   bar.appendChild(exp);
+  const txt = el('button', 'quiet', 'Text');
+  txt.onclick = () => ctx.download('PRISMA-flow.txt', prismaText(state, p));
+  bar.appendChild(txt);
   root.appendChild(bar);
 
   const list = el('div', 'list');
@@ -272,6 +276,10 @@ export function renderFind(ctx, root) {
     x.disabled = true;
     provBar.appendChild(x);
   }
+  const elsewhere = el('button', 'provider elsewhere', 'Google Scholar & others →');
+  elsewhere.title = 'Search the places no browser can query, and bring the citations back';
+  elsewhere.onclick = () => handOff(ctx, input.value.trim() || searchState.query);
+  provBar.appendChild(elsewhere);
   root.appendChild(provBar);
 
   const list = el('div', 'list');
@@ -279,6 +287,11 @@ export function renderFind(ctx, root) {
     const e = el('div', 'empty');
     e.appendChild(el('h2', null, 'Seven databases, one query'));
     e.appendChild(el('p', null, 'OpenAlex, Crossref, Europe PMC, PubMed, DOAJ, PLOS and OpenAIRE at the same time. Records describing the same paper are merged, so you screen each paper once. Free PDFs are linked where they legally exist.'));
+    const also = el('p', null, 'Google Scholar, Scopus, Web of Science and the publishers cannot be queried from any browser. Sieve opens your search there and takes the .bib or .ris you export back.');
+    e.appendChild(also);
+    const b = el('button', 'quiet', 'Search Google Scholar and the rest →');
+    b.onclick = () => handOff(ctx, input.value.trim() || searchState.query);
+    e.appendChild(b);
     list.appendChild(e);
   } else {
     const head = el('div', 'bar');
@@ -383,6 +396,45 @@ export function renderFind(ctx, root) {
     searchState.running = false;
     renderFind(ctx, root);
   }
+}
+
+/// The places that cannot be queried programmatically. Google Scholar forbids it in its
+/// terms, BASE restricts its API to registered institutions, and the publishers gate search
+/// behind institutional agreements. Scraping them would be both a breach and brittle, so
+/// Sieve builds the search, opens it, and takes the citation file back — which is exactly
+/// what the desktop app does.
+export function handOff(ctx, query) {
+  ctx.sheet('Search where a browser cannot', (body, close) => {
+    const field = el('div', 'field');
+    field.appendChild(el('label', null, 'Search terms'));
+    const input = el('input');
+    input.value = query || '';
+    field.appendChild(input);
+    body.appendChild(field);
+    body.appendChild(el('p', 'meta',
+      'These indexes have no API a browser may use. Open one, run the search, export the results as .bib or .ris, then drop that file anywhere on this page — every reference lands in your library with its provenance recorded.'));
+
+    for (const site of EXTERNAL_SITES) {
+      const card = el('div', 'card export-row');
+      const text = el('div');
+      text.appendChild(el('h4', null, site.name));
+      text.appendChild(el('div', 'meta', site.blurb));
+      text.appendChild(el('div', 'hint', site.howTo));
+      card.appendChild(text);
+      const b = el('button', 'quiet', 'Open →');
+      b.onclick = () => window.open(siteURL(site, input.value.trim()), '_blank', 'noopener');
+      card.appendChild(b);
+      body.appendChild(card);
+    }
+
+    const actions = el('div', 'actions');
+    const pick = el('button', 'primary', 'I have a .bib or .ris — import it');
+    pick.onclick = () => { close(); document.querySelector('#fileInput').click(); };
+    const done = el('button', 'quiet', 'Close');
+    done.onclick = close;
+    actions.append(pick, done);
+    body.appendChild(actions);
+  });
 }
 
 // ---------------------------------------------------------------- screening

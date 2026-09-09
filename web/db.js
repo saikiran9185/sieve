@@ -320,22 +320,38 @@ export async function addProject(name) {
 export const STORES = ['projects', 'sources', 'evidence', 'tags', 'columns', 'cells',
                        'frames', 'axes', 'frameCells', 'searchRuns', 'methods', 'aiEvents'];
 
-export async function exportAll() {
+/// The whole library as one JSON object.
+///
+/// `withFiles` base64-encodes the PDFs into it, which is convenient for a small library and
+/// ruinous for a large one — base64 is a third bigger again, and it all has to exist as a
+/// string at once. The archive export puts the PDFs in raw instead and is the better route
+/// for anything real; this stays for the single-file case and for compatibility.
+export async function exportAll({ withFiles = true } = {}) {
   const out = { format: 'sieve-web/1', exported: new Date().toISOString() };
   for (const name of STORES) out[name] = await all(name);
   const encoded = [];
-  for (const f of await all('files')) {
-    const buf = await f.blob.arrayBuffer();
-    let bin = '';
-    const bytes = new Uint8Array(buf);
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  if (withFiles) {
+    for (const f of await all('files')) {
+      const buf = await f.blob.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      const chunk = 0x8000;
+      const pieces = [];
+      for (let i = 0; i < bytes.length; i += chunk) {
+        pieces.push(String.fromCharCode.apply(null, bytes.subarray(i, i + chunk)));
+      }
+      encoded.push({ sourceId: f.sourceId, name: f.name, base64: btoa(pieces.join('')) });
     }
-    encoded.push({ sourceId: f.sourceId, name: f.name, base64: btoa(bin) });
   }
   out.files = encoded;
   return out;
+}
+
+/// How big a JSON backup would be, so the app can steer you to the archive before it tries
+/// and fails rather than after.
+export async function libraryBytes() {
+  let total = 0;
+  for (const f of await all('files')) total += f.blob?.size || 0;
+  return total;
 }
 
 export async function importAll(data) {

@@ -464,3 +464,26 @@ input.slider { padding: 0; width: 84px; accent-color: var(--accent); }
 }
 .review-row[aria-current="true"] { border-color: var(--accent); }
 .review-row .project-line { gap: 7px; }
+
+/* Export and hand-off rows */
+.export-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.export-row > div:first-child { flex: 1; min-width: 0; }
+.export-row h4 { margin: 0 0 2px; }
+.export-row .hint { margin-top: 3px; }
+.export-row button { flex: 0 0 auto; }
+.provider.elsewhere { border-style: dashed; color: var(--accent); }
+button.wide-link { width: 100%; text-align: left; margin-bottom: 4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent); border-color: transparent; }
+button.wide-link:hover { border-color: var(--accent); }
+
+/* Guide */
+.guide-step { padding: 13px 15px; }
+.guide-title { display: flex; align-items: center; gap: 10px; }
+.guide-title h4 { margin: 0; font-size: 14px; }
+.guide-body { margin: 8px 0 0; font-size: 13px; line-height: 1.6; color: var(--dim); max-width: 68ch; }
+.guide-tip {
+  margin: 8px 0 0; padding-left: 11px; font-size: 12px; line-height: 1.55; color: var(--faint);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); max-width: 68ch;
+}
+.kv.wide { align-items: flex-start; margin-top: 8px; }
+.kv.wide .k { flex: 0 0 210px; color: var(--text); font-weight: 600; }

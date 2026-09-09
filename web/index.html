@@ -40,6 +40,7 @@
       <button class="nav" data-view="method">Method</button>
       <button class="nav" data-view="tags">Tags<span class="badge" id="badgeTags"></span></button>
       <button class="nav" data-view="settings">Settings</button>
+      <button class="nav" data-view="guide">Guide</button>
     </div>
 
     <footer>
@@ -47,7 +48,7 @@
         <span id="methodName">Choose a method</span>
         <span id="methodStep" class="meta"></span>
       </button>
-      <button id="addBtn" class="primary">Add PDFs</button>
+      <button id="addBtn" class="primary">Add PDFs or citations</button>
       <div class="row">
         <button id="exportBtn" class="quiet">Back up</button>
         <button id="importBtn" class="quiet">Restore</button>
@@ -69,6 +70,8 @@
         <select id="stageFilter" aria-label="Filter by stage"><option value="">All stages</option></select>
         <span class="grow"></span>
         <span id="libraryCount" class="meta"></span>
+        <button id="getAllPDFs" class="quiet">Get missing PDFs</button>
+        <button id="libraryExport" class="quiet">Export…</button>
       </div>
       <div id="sourceList" class="list"></div>
     </section>
@@ -153,6 +156,7 @@
     <section id="prisma" class="view hidden"></section>
     <section id="trail" class="view hidden"></section>
     <section id="method" class="view hidden"></section>
+    <section id="guide" class="view hidden"></section>
     <section id="tags" class="view hidden">
       <div class="bar"><strong>Tags</strong><span class="grow"></span>
         <button id="addTag" class="quiet">New tag</button></div>
@@ -162,11 +166,11 @@
   </main>
 </div>
 
-<div id="drop" class="drop hidden"><div>Drop PDFs to add them</div></div>
+<div id="drop" class="drop hidden"><div>Drop PDFs, or a .bib / .ris file</div></div>
 <div id="toast" class="toast hidden"></div>
 <div id="modal" class="modal hidden"><div class="sheet" id="modalBody"></div></div>
-<input id="fileInput" type="file" accept="application/pdf" multiple hidden>
-<input id="jsonInput" type="file" accept="application/json" hidden>
+<input id="fileInput" type="file" accept="application/pdf,.pdf,.bib,.ris,.txt" multiple hidden>
+<input id="jsonInput" type="file" accept="application/json,.json,application/zip,.zip" hidden>
 
 <script type="module" src="app.js"></script>
 </body>

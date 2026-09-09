@@ -15,6 +15,11 @@ import * as inspector from './inspector.js';
 import * as method from './method.js';
 import * as mapView from './map.js';
 import * as trail from './trail.js';
+import * as guide from './guide.js';
+import * as exports from './exports.js';
+import * as citations from './citations.js';
+import * as retrieve from './retrieve.js';
+import { readZip } from './zip.js';
 import { dedupeKey } from './search.js';
 
 const $ = (s) => document.querySelector(s);
@@ -25,7 +30,7 @@ const state = {
   project: null, projects: [],
   sources: [], evidence: [], tags: [], columns: [], cells: {},
   frames: [], axes: [], frameCells: {},
-  methods: [], aiEvents: [], allSources: [], allEvidence: [],
+  methods: [], aiEvents: [], searchRuns: [], allSources: [], allEvidence: [],
   openId: null, selection: null, stance: 'evidence', view: 'overview',
   railFilter: 'included', railQuery: '', railHidden: false,
 };
@@ -96,9 +101,9 @@ function cannotOpen(err) {
 /// remember to filter, and two reviews can never contaminate each other's counts.
 async function refresh() {
   const pid = state.project?.id;
-  const [sources, evidence, tags, columns, cells, frames, axes, frameCells, files, methods, aiEvents] =
+  const [sources, evidence, tags, columns, cells, frames, axes, frameCells, files, methods, aiEvents, searchRuns] =
     await Promise.all(['sources','evidence','tags','columns','cells','frames','axes','frameCells','files',
-                       'methods','aiEvents'].map(db.all));
+                       'methods','aiEvents','searchRuns'].map(db.all));
 
   const mine = r => r.projectId === pid;
   const withFiles = new Set(files.map(f => f.sourceId));
@@ -116,6 +121,7 @@ async function refresh() {
   // Recipes belong to no review; the method being run belongs to this one.
   state.methods = methods.filter(m => m.isTemplate || m.projectId === pid);
   state.aiEvents = aiEvents.filter(mine);
+  state.searchRuns = searchRuns.filter(mine).sort((a, b) => String(a.at).localeCompare(String(b.at)));
 
   $('#projectName').textContent = state.project?.name || 'Review';
   $('#projectMeta').textContent =
@@ -142,6 +148,7 @@ const RENDERERS = {
   method: (r) => method.render(ctx, r),
   map: (r) => mapView.render(ctx, r),
   trail: (r) => trail.render(ctx, r),
+  guide: (r) => guide.render(ctx, r),
   library: () => renderLibrary(),
   evidence: () => renderEvidence(),
   tags: () => renderTags(),
@@ -163,7 +170,7 @@ function renderCurrent() {
 
 const ctx = {
   state, refresh, go, toast, openSource,
-  prompt: promptFor, sheet, download,
+  prompt: promptFor, sheet, download, exportSheet: () => exportSheet(),
   async setStage(id, stage, reason = '') {
     const s = await db.get('sources', id);
     if (!s) return;
@@ -389,13 +396,11 @@ function sourceCard(s) {
     const read = el('button', 'primary', 'Read');
     read.onclick = () => { openSource(s.id); go('reader'); };
     actions.appendChild(read);
-  } else if (s.pdfURL) {
-    const open = el('button', 'quiet', 'Open free PDF');
-    open.onclick = () => window.open(s.pdfURL, '_blank', 'noopener');
-    actions.appendChild(open);
-    const note = el('button', 'quiet', 'Then drop it here');
-    note.disabled = true;
-    actions.appendChild(note);
+  } else {
+    const get = el('button', 'primary', 'Get the PDF');
+    get.title = 'Ask OpenAlex and Unpaywall for a free copy, and fetch it if the host allows it';
+    get.onclick = () => getPDF(s);
+    actions.appendChild(get);
   }
   if (s.url) {
     const src = el('button', 'quiet', 'Source page');
@@ -418,6 +423,21 @@ function sourceCard(s) {
 
 async function addFiles(files) {
   if (!state.sources.length) await store.requestPersistence().catch(() => {});
+
+  // A .bib or .ris is how references arrive from Zotero, Mendeley and the databases a
+  // browser cannot query. It is a drop, exactly like a PDF.
+  const citationFiles = [...files].filter(f => /\.(bib|bibtex|ris|txt)$/i.test(f.name));
+  let fromFiles = 0;
+  for (const file of citationFiles) {
+    const hits = citations.parseCitations(await file.text(), file.name);
+    if (!hits.length) continue;
+    fromFiles += await ctx.addFromHits(hits, `Imported from ${file.name}`);
+  }
+  if (fromFiles) toast(`${fromFiles} reference${fromFiles === 1 ? '' : 's'} imported`);
+  else if (citationFiles.length && ![...files].some(f => /\.pdf$/i.test(f.name))) {
+    toast('No references found in that file');
+  }
+
   let added = 0, already = 0, attached = 0;
   for (const file of files) {
     if (!/\.pdf$/i.test(file.name)) continue;
@@ -465,6 +485,7 @@ async function addFiles(files) {
     await logExtraction(id, sec, source, !sec.title);
     added++;
   }
+  if (!added && !attached && !already) { await refresh(); return; }
   await refresh();
   const parts = [];
   if (added) parts.push(`${added} added`);
@@ -503,6 +524,79 @@ function similarTitle(a, b) {
   if (!x.size || !y.size) return false;
   const shared = [...x].filter(w => y.has(w)).length;
   return shared / Math.min(x.size, y.size) >= 0.6;
+}
+
+/// Tries every free copy of a paper anyone knows about, and says plainly what happened.
+/// A browser cannot read a file from a site that does not allow it, so this either works or
+/// hands you the link — never a spinner that quietly gives up.
+async function getPDF(source) {
+  if (source.hasFile) { toast('That one is already here'); return; }
+  toast('Looking for a free copy…');
+  const result = await retrieve.retrieve(source, { onProgress: toast });
+
+  if (result.ok) {
+    const buf = await result.blob.arrayBuffer();
+    let sec = {};
+    try { sec = await Reader.readSections(new Blob([buf])); } catch {}
+    const rec = await db.get('sources', source.id);
+    Object.assign(rec, {
+      pages: sec.pageCount || rec.pages,
+      abstract: rec.abstract || sec.abstract || '',
+      conclusion: rec.conclusion || sec.conclusion || '',
+      conclusionHeading: rec.conclusionHeading || sec.conclusionHeading || '',
+      retrievedFrom: result.from.url,
+      retrievedAt: new Date().toISOString(),
+    });
+    await db.put('sources', rec);
+    await db.put('files', { sourceId: source.id, name: `${source.title.slice(0, 60)}.pdf`, blob: result.blob });
+    await logExtraction(source.id, sec, rec);
+    await refresh();
+    scheduleSync();
+    toast(`Got it from ${retrieve.host(result.from.url)}`);
+    return;
+  }
+
+  if (result.reason === 'none') {
+    sheet('No free copy found', (body, close) => {
+      body.appendChild(el('p', 'meta',
+        `Neither OpenAlex nor Unpaywall knows of a legally free PDF of “${source.title}”. That usually means it is behind a paywall.`));
+      body.appendChild(el('p', 'meta',
+        'Your library may have it. Open the paper\u2019s page, sign in there, download the PDF, then drop it anywhere on this page — it will attach to this record rather than becoming a second copy.'));
+      const actions = el('div', 'actions');
+      if (source.url) {
+        const open = el('button', 'primary', 'Open the paper\u2019s page');
+        open.onclick = () => { window.open(source.url, '_blank', 'noopener'); close(); };
+        actions.appendChild(open);
+      }
+      const scholar = el('button', 'quiet', 'Look on Google Scholar');
+      scholar.onclick = () => {
+        window.open(`https://scholar.google.com/scholar?q=${encodeURIComponent(source.title)}`, '_blank', 'noopener');
+        close();
+      };
+      actions.append(scholar);
+      body.appendChild(actions);
+    });
+    return;
+  }
+
+  // Copies exist, but none of their hosts allows a browser on another site to read them.
+  sheet('Found it — but the site will not let this page read it', (body, close) => {
+    body.appendChild(el('p', 'meta',
+      `There ${result.copies.length === 1 ? 'is a free copy' : `are ${result.copies.length} free copies`} of this paper, and every one is on a site that blocks cross-origin reads. That is a rule of the web rather than a limit of this app; the macOS version has no such restriction.`));
+    body.appendChild(el('p', 'meta',
+      'Open one, save the PDF, and drop it anywhere on this page. It will attach to this record.'));
+    for (const c of result.copies.slice(0, 6)) {
+      const b = el('button', 'reason wide-link');
+      b.textContent = `${retrieve.host(c.url)} — via ${c.from}`;
+      b.onclick = () => window.open(c.url, '_blank', 'noopener');
+      body.appendChild(b);
+    }
+    const actions = el('div', 'actions');
+    const drop = el('button', 'primary', 'I have the file — choose it');
+    drop.onclick = () => { close(); $('#fileInput').click(); };
+    actions.appendChild(drop);
+    body.appendChild(actions);
+  });
 }
 
 // ---------------------------------------------------------------- reader
@@ -865,6 +959,8 @@ function wire() {
   $('#fileInput').onchange = (e) => { addFiles([...e.target.files]); e.target.value = ''; };
   $('#filter').oninput = renderLibrary;
   $('#stageFilter').onchange = renderLibrary;
+  $('#libraryExport').onclick = () => exportSheet();
+  $('#getAllPDFs').onclick = () => getMissingPDFs();
   $('#evFilter').oninput = renderEvidence;
   $('#zoomIn').onclick = () => reader?.setScale(reader.scale + 0.2).then(afterZoom);
   $('#zoomOut').onclick = () => reader?.setScale(reader.scale - 0.2).then(afterZoom);
@@ -982,9 +1078,14 @@ function wire() {
 
   $('#exportBtn').onclick = async () => {
     toast('Packing your library…');
-    download(`sieve-backup-${new Date().toISOString().slice(0, 10)}.json`,
-             JSON.stringify(await db.exportAll()), 'application/json');
-    toast('Backed up — that file is your whole library');
+    try {
+      const blob = await exports.everythingZip(state, { onProgress: toast });
+      const day = new Date().toISOString().slice(0, 10);
+      downloadBlob(`${(state.project?.name || 'Sieve')} ${day}.zip`.replace(/[^\w .-]/g, ''), blob);
+      toast('Backed up — that archive is your whole review, PDFs and all');
+    } catch (err) {
+      toast(err.message || 'Could not pack the library');
+    }
   };
   $('#importBtn').onclick = async () => {
     const handle = await store.savedFolder(db).catch(() => null);
@@ -1005,8 +1106,13 @@ function wire() {
   $('#jsonInput').onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = '';
     if (!f) return;
-    try { await db.importAll(JSON.parse(await f.text())); await refresh(); toast('Restored'); }
-    catch { toast('That file is not a Sieve backup'); }
+    try {
+      if (/\.zip$/i.test(f.name)) await restoreArchive(f);
+      else { await db.importAll(JSON.parse(await f.text())); await refresh(); toast('Restored'); }
+      await showSafety();
+    } catch (err) {
+      toast(err.message || 'That file is not a Sieve backup');
+    }
   };
 
   document.addEventListener('keydown', (ev) => {
@@ -1039,6 +1145,141 @@ function wire() {
     e.preventDefault(); depth = 0; $('#drop').classList.add('hidden');
     await addFiles([...e.dataTransfer.files]);
   });
+}
+
+/// Works through every record with no full text. Slow and public — each one is a request to
+/// OpenAlex, Unpaywall and then a repository — so it reports as it goes and can be watched.
+async function getMissingPDFs() {
+  const missing = state.sources.filter(s => !s.hasFile && s.stage !== 'excludedScreening' && s.stage !== 'duplicate');
+  if (!missing.length) { toast('Every record that matters already has its full text'); return; }
+  if (!confirm(`Try to fetch ${missing.length} full text${missing.length === 1 ? '' : 's'}?\n\nSieve asks OpenAlex and Unpaywall where a free copy lives and downloads the ones whose hosts allow it. Nothing is uploaded.`)) return;
+
+  let got = 0, blocked = 0, none = 0;
+  for (const [i, s] of missing.entries()) {
+    toast(`${i + 1} of ${missing.length} · ${got} so far`);
+    const result = await retrieve.retrieve(s);
+    if (result.ok) {
+      const buf = await result.blob.arrayBuffer();
+      let sec = {};
+      try { sec = await Reader.readSections(new Blob([buf])); } catch {}
+      const rec = await db.get('sources', s.id);
+      Object.assign(rec, {
+        pages: sec.pageCount || rec.pages,
+        abstract: rec.abstract || sec.abstract || '',
+        conclusion: rec.conclusion || sec.conclusion || '',
+        conclusionHeading: rec.conclusionHeading || sec.conclusionHeading || '',
+        retrievedFrom: result.from.url, retrievedAt: new Date().toISOString(),
+      });
+      await db.put('sources', rec);
+      await db.put('files', { sourceId: s.id, name: `${s.title.slice(0, 60)}.pdf`, blob: result.blob });
+      await logExtraction(s.id, sec, rec);
+      got++;
+    } else if (result.reason === 'blocked') blocked++;
+    else none++;
+  }
+  await refresh();
+  scheduleSync();
+  toast(`${got} downloaded · ${blocked} exist but the host blocked us · ${none} with no free copy`);
+}
+
+/// Everything Sieve can hand you, in one place, with what each is for.
+function exportSheet() {
+  sheet('Export', (body, close) => {
+    body.appendChild(el('p', 'meta',
+      'Nothing here is a format you are stuck inside. The archive holds all of it at once.'));
+
+    const item = (title, detail, label, run) => {
+      const card = el('div', 'card export-row');
+      const text = el('div');
+      text.appendChild(el('h4', null, title));
+      text.appendChild(el('div', 'meta', detail));
+      card.appendChild(text);
+      const b = el('button', 'quiet', label);
+      b.onclick = async () => { try { await run(); } catch (e) { toast(e.message || 'That did not work'); } };
+      card.appendChild(b);
+      body.appendChild(card);
+    };
+
+    item('Everything, in one archive',
+         'The report, the PDFs, the diagram, every table, BibTeX and RIS, and a full backup.',
+         'Download .zip', async () => {
+      close();
+      toast('Packing everything…');
+      const blob = await exports.everythingZip(state, { onProgress: toast });
+      downloadBlob(`${(state.project?.name || 'Review').replace(/[^\w -]/g, '')}.zip`, blob);
+      toast('Done');
+    });
+
+    item('Full review report',
+         'The question, criteria, searches, flow diagram, every included paper with its evidence, the matrix, the frameworks and the disclosure. Print it to get a PDF.',
+         'Open & print', () => {
+      if (!exports.printReport(state)) toast('The browser blocked the new window — allow pop-ups for this page');
+      else close();
+    });
+    item('Full review report as a file',
+         'The same document as one HTML file you can keep, mail, or open and print later.',
+         'Download .html', () => {
+      download(`${(state.project?.name || 'Review')}.html`, exports.reportHTML(state), 'text/html');
+      close();
+    });
+
+    item('PRISMA flow diagram', 'Vector, for a thesis or a journal figure.', 'SVG', () => {
+      download('PRISMA-flow.svg', exports.prismaSVG(state), 'image/svg+xml');
+    });
+    item('PRISMA flow diagram', 'A 2× raster, for slides and documents that will not take SVG.', 'PNG', async () => {
+      downloadBlob('PRISMA-flow.png', await exports.prismaPNG(state));
+    });
+    item('PRISMA 2020 checklist', 'All 27 items, with what Sieve can already show for each.', 'CSV', () => {
+      download('PRISMA-2020-checklist.csv', exports.checklistCSV(state), 'text/csv');
+    });
+
+    item('The library as citations', 'For Zotero, Mendeley, EndNote or a LaTeX bibliography.', 'BibTeX', () => {
+      download('library.bib', citations.toBibTeX(state.sources), 'application/x-bibtex');
+    });
+    item('The library as citations', 'The other interchange format.', 'RIS', () => {
+      download('library.ris', citations.toRIS(state.sources), 'application/x-research-info-systems');
+    });
+
+    item('Tables', 'Sources, highlights, the extraction matrix and the machine-assistance trail.', 'CSVs', () => {
+      download('sources.csv', exports.sourcesCSV(state), 'text/csv');
+      download('highlights.csv', exports.evidenceCSV(state), 'text/csv');
+      download('matrix.csv', exports.matrixCSV(state), 'text/csv');
+      download('ai-trail.csv', exports.trailCSV(state), 'text/csv');
+      close();
+    });
+  });
+}
+
+/// Puts an archive back: the index, then each PDF by the path the index recorded for it.
+async function restoreArchive(file) {
+  toast('Reading the archive…');
+  const entries = await readZip(file);
+  const indexEntry = entries.find(e => /(^|\/)library\.json$/.test(e.name))
+                  || entries.find(e => /(^|\/)sieve-backup\.json$/.test(e.name));
+  if (!indexEntry) throw new Error('That archive has no Sieve index in it');
+  const index = JSON.parse(await indexEntry.blob.text());
+  const root = indexEntry.name.replace(/library\.json$|sieve-backup\.json$/, '');
+
+  await db.importAll({ ...index, files: index.files || [] });
+  let restored = 0;
+  for (const entry of index.pdfManifest || []) {
+    const hit = entries.find(e => e.name === root + entry.path);
+    if (!hit) continue;
+    await db.put('files', {
+      sourceId: entry.sourceId, name: entry.name,
+      blob: new Blob([hit.blob], { type: 'application/pdf' }),
+    });
+    restored++;
+  }
+  await refresh();
+  toast(`Restored ${index.sources?.length || 0} sources and ${restored} PDF${restored === 1 ? '' : 's'}`);
+}
+
+function downloadBlob(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 function afterZoom() { drawEvidence(); runFind(); }

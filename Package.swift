@@ -18,6 +18,14 @@ let package = Package(
             path: "Sources/SieveCore",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // Runs on every platform the core claims to support, so a Windows regression in
+        // the engine's behaviour shows up as a red test rather than at a user's desk.
+        .testTarget(
+            name: "SieveCoreTests",
+            dependencies: ["SieveCore"],
+            path: "Tests/SieveCoreTests",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .executableTarget(
             name: "Sieve",
             dependencies: ["SieveCore"],

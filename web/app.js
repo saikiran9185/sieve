@@ -25,7 +25,7 @@ const state = {
   project: null, projects: [],
   sources: [], evidence: [], tags: [], columns: [], cells: {},
   frames: [], axes: [], frameCells: {},
-  methods: [], aiEvents: [],
+  methods: [], aiEvents: [], allSources: [], allEvidence: [],
   openId: null, selection: null, stance: 'evidence', view: 'overview',
   railFilter: 'included', railQuery: '', railHidden: false,
 };
@@ -40,14 +40,56 @@ const STANCES = {
 // ---------------------------------------------------------------- boot
 
 async function boot() {
-  state.projects = await db.seed();
-  const savedId = (await db.get('meta', 'currentProject'))?.value;
-  state.project = state.projects.find(p => p.id === savedId) || state.projects[0];
-  await refresh();
+  // The buttons are wired before anything is loaded. If the library is slow, or refuses to
+  // open at all, a sidebar whose every control is dead is a worse answer than an empty one.
   wire();
-  go('overview');
+  try {
+    state.projects = await db.seed();
+    const savedId = (await db.get('meta', 'currentProject'))?.value;
+    state.project = state.projects.find(p => p.id === savedId) || state.projects[0];
+    await refresh();
+    go('overview');
+  } catch (err) {
+    cannotOpen(err);
+    return;
+  }
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   await showSafety();
+}
+
+/// Says what went wrong and what to do about it. A blank app that answers no clicks is the
+/// one failure a person cannot diagnose, report or work around.
+function cannotOpen(err) {
+  console.error('Sieve could not open its library', err);
+  $('#projectName').textContent = 'Sieve';
+  $('#projectMeta').textContent = 'library not open';
+  $('#safetyDot').className = 'dot bad';
+  $('#safetyText').textContent = 'Library not open';
+  $('#folderBtn').hidden = true;
+
+  const box = el('div', 'empty');
+  box.appendChild(el('h2', null, 'Sieve could not open your library'));
+  if (err?.blocked) {
+    box.appendChild(el('p', null,
+      'Another tab or window still has an older version of Sieve open, and a browser will not upgrade a library while that is true.'));
+    box.appendChild(el('p', null,
+      'Close the other Sieve tabs — and the installed app, if you added it to your dock — then reload this page. Nothing has been lost: your sources and highlights are exactly where they were.'));
+  } else {
+    box.appendChild(el('p', null,
+      'The browser refused to open the local database. This usually means private browsing, or storage switched off for this site.'));
+    box.appendChild(el('p', 'hint', String(err?.message || err)));
+  }
+  const again = el('button', 'primary', 'Reload');
+  again.onclick = () => location.reload();
+  box.appendChild(again);
+
+  for (const v of document.querySelectorAll('.view')) v.classList.add('hidden');
+  const overview = $('#overview');
+  overview.classList.remove('hidden');
+  overview.innerHTML = '';
+  overview.appendChild(box);
+  // Every screen would show the same failure, so none of them should pretend otherwise.
+  for (const b of document.querySelectorAll('.nav')) b.disabled = true;
 }
 
 /// Reloads everything for the current review. Scoping happens here so no screen has to
@@ -60,6 +102,9 @@ async function refresh() {
 
   const mine = r => r.projectId === pid;
   const withFiles = new Set(files.map(f => f.sourceId));
+  // Kept unscoped so the review picker can say how big each review is without reloading.
+  state.allSources = sources;
+  state.allEvidence = evidence;
   state.sources = sources.filter(mine).map(s => ({ ...s, hasFile: withFiles.has(s.id) }));
   state.evidence = evidence.filter(mine);
   state.tags = tags.filter(mine);
@@ -871,29 +916,68 @@ function wire() {
     await refresh();
   });
 
-  $('#projectPicker').onclick = () => sheet('Reviews', (body, close) => {
+  $('#projectPicker').onclick = () => sheet('Your reviews', (body, close) => {
+    body.appendChild(el('p', 'meta',
+      'Each review is its own library: its own sources, highlights, matrix, frameworks and PRISMA counts. Nothing crosses between them.'));
     for (const p of state.projects) {
-      const b = el('button', 'card');
-      b.style.cssText = 'width:100%;text-align:left;margin-bottom:6px;cursor:pointer';
-      b.appendChild(el('h4', null, (p.id === state.project?.id ? '✓ ' : '') + p.name));
+      const mine = p.id === state.project?.id;
+      const b = el('button', 'review-row');
+      b.setAttribute('aria-current', String(mine));
+      const head = el('div', 'project-line');
+      head.appendChild(el('strong', null, p.name));
+      if (mine) head.appendChild(chip('open', 'var(--accent)'));
+      b.appendChild(head);
       if (p.question) b.appendChild(el('div', 'meta', p.question));
+      const n = state.allSources.filter(s => s.projectId === p.id).length;
+      const h = state.allEvidence.filter(e => e.projectId === p.id).length;
+      b.appendChild(el('div', 'meta',
+        `${n} source${n === 1 ? '' : 's'} · ${h} highlight${h === 1 ? '' : 's'}`));
       b.onclick = async () => {
         state.project = p;
         await db.put('meta', { key: 'currentProject', value: p.id });
+        state.openId = null;
         await refresh(); close(); go('overview');
       };
       body.appendChild(b);
     }
+    const actions = el('div', 'actions');
     const add = el('button', 'primary', 'New review');
-    add.onclick = () => { close(); promptFor('New review', 'Name', async (name) => {
+    add.onclick = () => { close(); promptFor('New review', 'What are you looking into?', async (name) => {
       if (!name) return;
       const id = await db.addProject(name);
       state.projects = await db.all('projects');
       state.project = state.projects.find(p => p.id === id);
       await db.put('meta', { key: 'currentProject', value: id });
+      state.openId = null;
       await refresh(); go('settings');
+      toast(`“${name}” is now the open review`);
     }); };
-    body.appendChild(add);
+    actions.appendChild(add);
+    if (state.projects.length > 1) {
+      const del = el('button', 'quiet danger', 'Delete this review');
+      del.onclick = async () => {
+        const doomed = state.project;
+        if (!confirm(`Delete “${doomed.name}” and everything in it? Its sources, PDFs and highlights go too.`)) return;
+        close();
+        for (const name of db.STORES) {
+          if (name === 'projects') continue;
+          for (const row of await db.all(name)) {
+            if (row.projectId !== doomed.id) continue;
+            if (name === 'sources') await db.del('files', row.id);
+            await db.del(name, row.id ?? row.key);
+          }
+        }
+        await db.del('projects', doomed.id);
+        state.projects = await db.all('projects');
+        state.project = state.projects[0];
+        await db.put('meta', { key: 'currentProject', value: state.project.id });
+        state.openId = null;
+        await refresh(); go('overview');
+        toast('Review deleted');
+      };
+      actions.appendChild(del);
+    }
+    body.appendChild(actions);
   });
 
   $('#exportBtn').onclick = async () => {

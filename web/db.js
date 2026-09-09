@@ -13,11 +13,35 @@ const DB_VERSION = 3;
 
 let dbp = null;
 
+/// A browser will not upgrade a database while another tab still holds the old version open,
+/// and when that happens the open request fires *nothing*: no success, no error, no timeout.
+/// Anything awaiting it waits forever. The first shipped version registered no
+/// `versionchange` handler to step aside with, so a second tab left open on it is enough to
+/// wedge this one — which is why the failure is caught here and named rather than left to
+/// look like an app that simply does not start.
+export class LibraryBlocked extends Error {
+  constructor() {
+    super('Another tab still has an older version of Sieve open.');
+    this.name = 'LibraryBlocked';
+    this.blocked = true;
+  }
+}
+
 export function open() {
   if (dbp) return dbp;
   dbp = new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+    let settled = false, upgrading = false;
+    const finish = (fn, value) => { if (!settled) { settled = true; clearTimeout(watchdog); fn(value); } };
+    // `onblocked` is the documented signal, and a timer is the backstop for browsers that
+    // stay quiet. It is cancelled the moment an upgrade actually starts, because a large
+    // library can take longer than this to migrate.
+    const watchdog = setTimeout(() => { if (!upgrading) finish(reject, new LibraryBlocked()); }, 5000);
+    req.onblocked = () => finish(reject, new LibraryBlocked());
+
     req.onupgradeneeded = () => {
+      upgrading = true;
+      clearTimeout(watchdog);
       const db = req.result;
 
       if (!db.objectStoreNames.contains('sources')) {
@@ -72,9 +96,18 @@ export function open() {
         db.createObjectStore('aiEvents', { keyPath: 'id', autoIncrement: true });
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+
+    req.onsuccess = () => {
+      const db = req.result;
+      // Step aside for a future version rather than wedging it the way v1 wedged this one.
+      db.onversionchange = () => { dbp = null; db.close(); };
+      finish(resolve, db);
+    };
+    req.onerror = () => finish(reject, req.error);
   });
+  // A failed open must not be remembered, or closing the other tab would not be enough to
+  // recover — reloading has to be able to try again.
+  dbp.catch(() => { dbp = null; });
   return dbp;
 }
 

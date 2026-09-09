@@ -37,7 +37,7 @@ body {
   border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 14px 10px;
 }
 #sidebar header { padding: 4px 6px 12px; }
-#navlist { display: flex; flex-direction: column; min-height: 0; }
+#navlist { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 #sidebar h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
 #sidebar header p { margin: 2px 0 0; font-size: 11.5px; color: var(--dim); }
 .nav {
@@ -47,7 +47,7 @@ body {
 }
 .nav:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
 .nav[aria-current="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
-#sidebar footer { margin-top: auto; display: flex; flex-direction: column; gap: 7px; padding: 8px 4px 0; }
+#sidebar footer { margin-top: 8px; flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; padding: 8px 4px 0; }
 .row { display: flex; gap: 6px; }
 .row > * { flex: 1; }
 .hint { font-size: 10.5px; color: var(--faint); margin: 2px 0 0; line-height: 1.45; }
@@ -289,7 +289,10 @@ button.linky { text-align: left; padding: 4px 0; border: 0; background: none; co
   width: 100%; text-align: left; border: 1px solid var(--line); border-radius: var(--radius);
   padding: 7px 9px; background: var(--raised); display: flex; flex-direction: column; gap: 1px;
 }
+.project:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.project-line { display: flex; align-items: center; gap: 5px; }
 .project #projectName { font-weight: 600; font-size: 13px; }
+.project .chev { color: var(--faint); font-size: 10px; margin-left: auto; }
 .navgroup {
   margin: 12px 0 3px; padding: 0 10px; font-size: 10px; letter-spacing: .07em;
   text-transform: uppercase; color: var(--faint);
@@ -452,3 +455,12 @@ input.slider { padding: 0; width: 84px; accent-color: var(--accent); }
 .seg + .seg { border-left: 1px solid var(--line); }
 .seg[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
 .card.good { background: color-mix(in srgb, var(--emerald) 8%, var(--raised)); border-color: color-mix(in srgb, var(--emerald) 35%, var(--line)); }
+
+/* The review picker */
+.review-row {
+  width: 100%; text-align: left; display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; margin-bottom: 6px; border: 1px solid var(--line);
+  border-radius: var(--radius); background: var(--raised); cursor: pointer;
+}
+.review-row[aria-current="true"] { border-color: var(--accent); }
+.review-row .project-line { gap: 7px; }

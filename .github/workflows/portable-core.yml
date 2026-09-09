@@ -18,6 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Swift on Windows compiles against the MSVC toolchain, so the C runtime module
+      # maps (ucrt, visualc) only resolve inside a Visual Studio developer environment.
+      # Without this the build dies on "could not build module 'ucrt'" before it reaches
+      # any Swift of ours.
+      - uses: compnerd/gha-setup-vsdevenv@main
+
       - uses: compnerd/gha-setup-swift@main
         with:
           branch: swift-6.0.3-release
@@ -44,9 +50,14 @@ jobs:
 
   macos:
     name: macOS (full app)
-    runs-on: macos-14
+    # macos-14 still defaults to Swift 5.10, which cannot read a
+    # swift-tools-version: 6.0 manifest at all.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
 
       - name: Build everything
         run: swift build

@@ -4,6 +4,10 @@ import Foundation
 #if canImport(FoundationXML)
 import FoundationXML
 #endif
+// URLSession and URLRequest are not in the base Foundation module off Apple platforms.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// One academic database Sieve can query. All six run concurrently against a single
 /// query string and their results get merged into one deduplicated list.
@@ -317,7 +321,7 @@ final class AtomParser: NSObject, XMLParserDelegate {
         parser.shouldResolveExternalEntities = false
         parser.externalEntityResolvingPolicy = .never
         parser.delegate = p
-        parser.parse()
+        _ = parser.parse()
         return p.hits
     }
 

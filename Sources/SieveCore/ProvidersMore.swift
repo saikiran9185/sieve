@@ -1,4 +1,8 @@
 import Foundation
+// URLSession and URLRequest are not in the base Foundation module off Apple platforms.
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // Small JSON helpers, local to this file.
 private func str(_ any: Any?) -> String { (any as? String) ?? "" }

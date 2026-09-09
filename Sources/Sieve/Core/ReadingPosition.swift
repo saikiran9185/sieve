@@ -32,6 +32,11 @@ enum ReadingMemory {
 
     static func forget(paper: Int) { d.removeObject(forKey: key(paper: paper)) }
 
+    /// Called on the way out. Quitting is the case where "it remembered while the app was
+    /// open but forgot when I reopened it" comes from, so the last write is forced to disk
+    /// rather than left to the next flush.
+    static func flush() { d.synchronize() }
+
     // MARK: Where the app itself was
 
     /// The paper you had open, per review, so reopening Sieve lands you back in the document

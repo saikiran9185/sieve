@@ -173,7 +173,34 @@ appears resizes the document, which is the point: a control that changes the lay
 changes the zoom.
 
 **⌃⌘H** hides your own highlights, so you can re-read a passage as the publisher set it
-rather than as you have already marked it.
+rather than as you have already marked it. Nothing is lost when they are hidden — they are
+only not drawn — and the reader says so plainly at the corner of the page.
+
+The colour categories stay on screen in reading mode rather than appearing only once you
+have selected something: they are the reminder of what you are reading *for*. Turn that off
+in Settings if you would rather have the strip of page back.
+
+## A workspace that fits the screen you have
+
+Four checkboxes in **Settings → Workspace**, because a 13-inch laptop and a 27-inch display
+are not the same room:
+
+- **Compact layout** (⌃⌘K) — tighter spacing and slightly smaller type on every screen.
+- **Keep the sidebar out of the way** (⌃⌘S) — it slides in when you push the pointer to the
+  left edge and slides away again, drawn *over* the screen rather than beside it, so
+  revealing it never resizes what you are reading.
+- **Show the colours in reading mode even with nothing selected.**
+- **Hide my highlights in reading mode until I select something.**
+- **Open a note box on the page when I mark a passage** — off by default. Marking a passage
+  marks it and nothing else; the note is written in the highlights panel, beside the passage.
+
+Toolbars adapt rather than truncate. Where there is not enough width, a control drops
+something whole — the caption, then the labels — instead of clipping every label to a letter
+and an ellipsis.
+
+**Click one of your own highlights in the document** and its card scrolls into view in the
+panel and is marked, so annotating or deleting the passage you are looking at is one click
+from the page itself.
 
 **Your place is kept per paper** — the page, the zoom and the position down the page — and
 restored when you come back to it, whether that is after a glance at another paper or after

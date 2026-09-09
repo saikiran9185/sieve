@@ -6,8 +6,11 @@ import AppKit
 struct InspectorPanel: View {
     let paper: Paper?
     @ObservedObject var controller: PDFController
-    /// The reader's note box. Setting it from here opens the note on the passage itself.
+    /// The reader's floating note box, used only when Settings asks for one.
     var focusEvidenceId: Binding<Evidence?>? = nil
+    /// The highlight to scroll to and mark — the one you just made, or the one you clicked
+    /// in the document.
+    var selectedId: Binding<Int?>? = nil
     @EnvironmentObject var store: Store
     @EnvironmentObject var assistant: Assistant
     @State private var tab = 0
@@ -77,22 +80,39 @@ struct InspectorPanel: View {
                     }
                     .padding(.horizontal, D.s3).padding(.vertical, 6)
                     Divider()
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: D.s2) {
-                            ForEach(items) { e in
-                                EvidenceCard(evidence: e, paper: p, compact: true,
-                                             onNote: focusEvidenceId.map { binding in
-                                                 { binding.wrappedValue = e }
-                                             }) {
-                                    controller.reveal(e)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: D.s2) {
+                                ForEach(items) { e in
+                                    EvidenceCard(evidence: e, paper: p, compact: true,
+                                                 highlighted: selectedId?.wrappedValue == e.id,
+                                                 onNote: noteAction(for: e)) {
+                                        controller.reveal(e)
+                                    }
+                                    .id(e.id)
                                 }
                             }
+                            .padding(D.s3)
                         }
-                        .padding(D.s3)
+                        // Clicking a highlight in the document, or making a new one, brings
+                        // its card into view instead of leaving you to find it.
+                        .onChange(of: selectedId?.wrappedValue) { _, id in
+                            guard let id else { return }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(id, anchor: .center)
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    /// The note is written here, in the panel, next to the passage it belongs to. Only if
+    /// you have asked for the floating box in Settings does the button send it to the page.
+    private func noteAction(for e: Evidence) -> (() -> Void)? {
+        guard UISettings.noteOnHighlight, let binding = focusEvidenceId else { return nil }
+        return { binding.wrappedValue = e }
     }
 
     private func copyAll(_ items: [Evidence], _ p: Paper) {
@@ -312,7 +332,9 @@ struct EvidenceCard: View {
     let evidence: Evidence
     let paper: Paper?
     var compact = false
-    /// Where the reader wants the note written — over the passage, not down here.
+    /// The passage you just marked, or just clicked in the document.
+    var highlighted = false
+    /// Set only when Settings asks for the note to be written over the page instead of here.
     var onNote: (() -> Void)? = nil
     var onJump: (() -> Void)? = nil
 
@@ -467,9 +489,11 @@ struct EvidenceCard: View {
             }
         }
         .padding(D.s3)
-        .background(D.surface)
+        .background(highlighted ? Color(hex: evidence.colorHex).opacity(0.13) : D.surface)
         .clipShape(RoundedRectangle(cornerRadius: D.radius))
-        .hairlineBorder()
+        .overlay(RoundedRectangle(cornerRadius: D.radius)
+            .stroke(highlighted ? Color(hex: evidence.colorHex) : D.hairline,
+                    lineWidth: highlighted ? 1.4 : 0.5))
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { if let onJump { onJump() } }
         .sheet(isPresented: $relating) {

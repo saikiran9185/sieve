@@ -298,6 +298,11 @@ struct SettingsView: View {
     @State private var draft: Project? = nil
     @AppStorage("sieve.contactEmail") private var contactEmail = ""
     @AppStorage("sieve.ai") private var aiEnabled = true
+    @AppStorage(UISettings.compactKey) private var compactUI = false
+    @AppStorage(UISettings.autoHideSidebarKey) private var autoHideSidebar = false
+    @AppStorage(UISettings.noteOnHighlightKey) private var noteOnHighlight = false
+    @AppStorage(UISettings.paletteAlwaysKey) private var paletteAlways = true
+    @AppStorage(UISettings.dimHighlightsReadingKey) private var dimHighlightsInReading = false
 
 
     /// CORE takes an optional key that only raises its rate limit, so it isn't declared
@@ -372,6 +377,20 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: D.s5) {
                 Text("Settings").font(.system(size: 26, weight: .semibold))
+
+                group("Workspace") {
+                    check($compactUI, "Compact layout",
+                          "Tighter spacing and slightly smaller type on every screen. On a laptop the default spacing spends a third of the window on air between things you are trying to compare.")
+                    check($autoHideSidebar, "Keep the sidebar out of the way",
+                          "The sidebar slides in when you push the pointer to the left edge and slides away again. It is drawn over the screen rather than beside it, so revealing it never resizes what you are reading.")
+                    Divider()
+                    check($paletteAlways, "Show the colours in reading mode even with nothing selected",
+                          "The categories are the reminder of what you are reading for. Off, they appear only once you have selected a passage.")
+                    check($dimHighlightsInReading, "Hide my highlights in reading mode until I select something",
+                          "Re-read a passage as the publisher set it rather than as you have already marked it. Your marks are never lost, only not drawn — and ⌃⌘H does the same thing at any time.")
+                    check($noteOnHighlight, "Open a note box on the page when I mark a passage",
+                          "Off, marking a passage marks it and nothing else; the note is written in the highlights panel beside the passage. On, a box opens over the page straight away.")
+                }
 
                 if let p = store.project {
                     group("This review") {
@@ -674,6 +693,16 @@ struct SettingsView: View {
             SectionLabel(text: title)
             Card { VStack(alignment: .leading, spacing: D.s3) { content() } }
         }
+    }
+
+    private func check(_ value: Binding<Bool>, _ title: String, _ detail: String) -> some View {
+        Toggle(isOn: value) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(D.body)
+                Text(detail).font(D.small).foregroundStyle(.secondary)
+            }
+        }
+        .toggleStyle(.checkbox)
     }
 
     private func labelled<C: View>(_ label: String, @ViewBuilder content: () -> C) -> some View {

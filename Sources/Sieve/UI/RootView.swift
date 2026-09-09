@@ -10,6 +10,11 @@ struct RootView: View {
     @State private var importing: (done: Int, total: Int)? = nil
     @AppStorage("sieve.sidebarWidth") private var sidebarWidth: Double = 218
     @AppStorage("sieve.showSidebar") private var showSidebar: Bool = true
+    @AppStorage(UISettings.autoHideSidebarKey) private var autoHideSidebar: Bool = false
+    // Held here so flipping density in Settings redraws the whole app rather than the one
+    // screen you happened to be looking at; `D` reads the same value.
+    @AppStorage(UISettings.compactKey) private var compact: Bool = false
+    @State private var sidebarPeek = false
 
     var body: some View {
         // A plain HStack, not NavigationSplitView.
@@ -22,7 +27,7 @@ struct RootView: View {
         HStack(spacing: 0) {
             // Reading mode takes the sidebar and the method bar away too. Half the width of a
             // 13-inch screen was going to chrome around a document that wanted all of it.
-            if showSidebar && !nav.readingModeActive {
+            if sidebarInline {
                 Sidebar()
                     .frame(width: sidebarWidth)
                     .background(.bar)
@@ -57,6 +62,11 @@ struct RootView: View {
             }
         }
         .background(D.canvas)
+        // Auto-hidden, the sidebar is drawn over the content rather than beside it, so
+        // revealing it never resizes the screen underneath — which on the reader would mean
+        // refitting the document every time you reached for the navigation.
+        .overlay(alignment: .leading) { if sidebarOverlaid { peekSidebar } }
+        .background(WindowRestorer())
         // Drop a PDF anywhere in the window to add it to the review.
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             handleDrop(providers); return true
@@ -91,6 +101,55 @@ struct RootView: View {
         .onChange(of: store.currentProjectId) { _, _ in restoreLastPaper() }
         .onChange(of: nav.section) { _, _ in nav.rememberPlace(project: store.currentProjectId) }
         .onChange(of: nav.readingPaperId) { _, _ in nav.rememberPlace(project: store.currentProjectId) }
+    }
+
+    /// The sidebar takes real width unless you have asked for it to stay out of the way.
+    private var sidebarInline: Bool {
+        showSidebar && !nav.readingModeActive && !autoHideSidebar
+    }
+
+    private var sidebarOverlaid: Bool {
+        showSidebar && !nav.readingModeActive && autoHideSidebar
+    }
+
+    /// A narrow strip you can push the pointer into, and the sidebar itself once you have.
+    /// Modelled on the browsers that do this well: the target is at the very edge of the
+    /// window, so it is reachable by throwing the pointer left without aiming.
+    @ViewBuilder
+    private var peekSidebar: some View {
+        HStack(spacing: 0) {
+            if sidebarPeek {
+                Sidebar()
+                    .frame(width: sidebarWidth)
+                    .background(.regularMaterial)
+                    .overlay(alignment: .trailing) {
+                        Rectangle().fill(D.hairline).frame(width: 0.5)
+                    }
+                    .shadow(color: .black.opacity(0.2), radius: 16, x: 4)
+                    .transition(.move(edge: .leading))
+            } else {
+                // The rail is visible enough to say the sidebar is there, thin enough to
+                // cost nothing.
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.14))
+                    .frame(width: 4)
+                    .overlay(alignment: .top) {
+                        Image(systemName: "sidebar.left")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .padding(4)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+                            .padding(.top, D.s2)
+                            .padding(.leading, 2)
+                            .accessibilityHidden(true)
+                    }
+                    .contentShape(Rectangle().inset(by: -6))
+            }
+            Spacer(minLength: 0)
+        }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.16)) { sidebarPeek = hovering }
+        }
     }
 
     private func restoreLastPaper() {
@@ -594,4 +653,23 @@ struct NewProjectSheet: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
+
+
+/// Gives the window a name so macOS restores its size and position on the next launch.
+///
+/// Pane widths were already remembered, but the window itself was not, so reopening Sieve
+/// handed back a default-sized window and every proportion inside it looked wrong.
+struct WindowRestorer: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            guard let window = v.window else { return }
+            window.setFrameAutosaveName("sieve.mainWindow")
+            window.tabbingMode = .disallowed
+        }
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

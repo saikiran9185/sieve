@@ -9,8 +9,12 @@ struct SieveApp: App {
     @StateObject private var downloader = Downloader()
     @StateObject private var nav = Navigator()
     @StateObject private var enricher = Enricher()
+    // Held here purely so the View menu's titles follow the setting instead of going stale.
+    @AppStorage(UISettings.compactKey) private var compactUI = false
+    @AppStorage(UISettings.autoHideSidebarKey) private var autoHideSidebar = false
 
     init() {
+        UISettings.registerDefaults()
         // The window is built before any view appears, so the saved appearance is applied here
         // rather than in onAppear, which would flash the wrong theme first.
         Appearance.apply(Appearance.current)
@@ -46,6 +50,13 @@ struct SieveApp: App {
                     nav.hideHighlights.toggle()
                 }
                 .keyboardShortcut("h", modifiers: [.command, .control])
+                Divider()
+                Button(compactUI ? "Comfortable Layout" : "Compact Layout") { compactUI.toggle() }
+                    .keyboardShortcut("k", modifiers: [.command, .control])
+                Button(autoHideSidebar ? "Keep the Sidebar Open" : "Auto-hide the Sidebar") {
+                    autoHideSidebar.toggle()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .control])
             }
             CommandGroup(replacing: .newItem) {
                 Button("New Review…") { nav.section = .dashboard; nav.showNewProject = true }

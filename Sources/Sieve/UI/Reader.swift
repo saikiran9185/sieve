@@ -216,6 +216,43 @@ struct PDFKitView: NSViewRepresentable {
             NotificationCenter.default.addObserver(
                 self, selector: #selector(scaleChanged),
                 name: .PDFViewScaleChanged, object: v)
+            // Scrolling is how you leave a page, not only paging, so the place is filed
+            // whenever the visible area settles.
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(visibleChanged),
+                name: .PDFViewVisiblePagesChanged, object: v)
+            // A quit does not run onDisappear, so the last place is written on the way out.
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(willTerminate),
+                name: NSApplication.willTerminateNotification, object: nil)
+
+            // Clicking one of your own highlights in the document says which passage you
+            // mean; the panel then scrolls to it. `delaysPrimaryMouseButtonEvents` off keeps
+            // text selection working exactly as before.
+            let click = NSClickGestureRecognizer(target: self, action: #selector(clicked(_:)))
+            click.delaysPrimaryMouseButtonEvents = false
+            v.addGestureRecognizer(click)
+        }
+
+        @objc private func clicked(_ g: NSClickGestureRecognizer) {
+            guard let v = pdfView, let onTap else { return }
+            let point = g.location(in: v)
+            guard let page = v.page(for: point, nearest: false) else { return }
+            let onPage = v.convert(point, to: page)
+            guard let hit = page.annotation(at: onPage) else { return }
+            guard let id = drawn.first(where: { $0.value === hit })?.key else { return }
+            onTap(id)
+        }
+
+        @objc private func visibleChanged() {
+            guard let v = pdfView, let c = controller else { return }
+            Task { @MainActor in self.rememberPlace(in: v, controller: c) }
+        }
+
+        @objc private func willTerminate() {
+            guard let v = pdfView, let c = controller else { return }
+            rememberPlace(in: v, controller: c)
+            ReadingMemory.flush()
         }
 
         /// Opens a document and puts you back where you stopped reading it — same page, same
@@ -338,6 +375,9 @@ struct ReaderScreen: View {
     @AppStorage("sieve.showInspector") private var showInspector: Bool = true
     @State private var showShortcuts = false
     @State private var stripHovered = false
+    /// The highlight the panel should scroll to and mark — set by making one, or by
+    /// clicking one in the document itself.
+    @State private var selectedEvidenceId: Int? = nil
 
     /// The reader's own view of the library. "Included" is the default because the point
     /// of this screen is the papers that made it into the review.
@@ -355,6 +395,12 @@ struct ReaderScreen: View {
     private var railVisible: Bool { showPaperList && !nav.focusMode }
     private var inspectorVisible: Bool { showInspector && !nav.focusMode }
 
+    /// Your marks are shown unless you have hidden them, or unless you have asked for
+    /// reading mode to give you the page clean.
+    private var hideHighlightsNow: Bool {
+        nav.hideHighlights || (nav.focusMode && UISettings.dimHighlightsInReading && !controller.hasSelection)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             if railVisible {
@@ -364,7 +410,8 @@ struct ReaderScreen: View {
             mainReader.frame(maxWidth: .infinity)
             if inspectorVisible {
                 PaneDivider(width: $inspectorWidth, range: 260...540, sizesTrailingPane: true)
-                InspectorPanel(paper: paper, controller: controller, focusEvidenceId: $noteTarget)
+                InspectorPanel(paper: paper, controller: controller,
+                               focusEvidenceId: $noteTarget, selectedId: $selectedEvidenceId)
                     .frame(width: inspectorWidth)
             }
         }
@@ -492,8 +539,11 @@ struct ReaderScreen: View {
                                paperId: p.id,
                                controller: controller,
                                evidence: store.evidence(forPaper: p.id),
-                               hideHighlights: nav.hideHighlights,
-                               onHighlightTapped: { _ in })
+                               hideHighlights: hideHighlightsNow,
+                               onHighlightTapped: { id in
+                                   selectedEvidenceId = id
+                                   showInspector = true
+                               })
                 } else if let p = paper {
                     missingPDF(p)
                 } else {
@@ -508,14 +558,74 @@ struct ReaderScreen: View {
         // A control that appears must never resize the page — that resize is what used to
         // throw away the zoom and the scroll position at the exact moment you marked something.
         .overlay(alignment: .top) { if nav.focusMode { focusStrip } }
-        .overlay(alignment: .top) { if controller.hasSelection { floatingPalette } }
+        // Outside reading mode the colours are already on the bar above, so the floating
+        // copy is only worth showing while something is selected.
+        .overlay(alignment: .top) {
+            if !nav.focusMode && controller.hasSelection { floatingPalette }
+        }
         .overlay(alignment: .bottomTrailing) { noteComposer }
-        .overlay(alignment: .bottomLeading) { if nav.hideHighlights { hiddenNotice } }
+        .overlay(alignment: .bottomLeading) { if hideHighlightsNow { hiddenNotice } }
     }
 
     /// The only chrome reading mode keeps: a thin bar that says where you are and how to get
     /// the workspace back. It fades to almost nothing until the pointer is near it.
     private var focusStrip: some View {
+        VStack(spacing: 4) {
+            focusControls
+            // The colours stay on screen in reading mode rather than appearing only once
+            // you have selected something. They are the reminder of what you are reading
+            // *for* — the categories you are hunting — and that reminder is worth more than
+            // the strip of page it covers.
+            if UISettings.paletteAlways || controller.hasSelection {
+                readingColours
+            }
+        }
+        .padding(.horizontal, D.s3).padding(.vertical, 5)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+            .stroke(D.hairline, lineWidth: 0.5))
+        .padding(.top, D.s2)
+        // Legible at rest, full strength when you reach for it.
+        .opacity(stripHovered || controller.hasSelection ? 1 : 0.55)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { stripHovered = hovering }
+        }
+    }
+
+    /// The colours, sized to whatever room the window actually has. They used to be laid out
+    /// at one size and truncated when it did not fit, which on a laptop left a row of
+    /// coloured squares labelled "D…", "M…", "F…" — present, and useless.
+    private var readingColours: some View {
+        ViewThatFits(in: .horizontal) {
+            colourButtons(showName: true, showShortcut: true)
+            colourButtons(showName: true, showShortcut: false)
+            colourButtons(showName: false, showShortcut: true)
+        }
+    }
+
+    private func colourButtons(showName: Bool, showShortcut: Bool) -> some View {
+        HStack(spacing: 4) {
+            ForEach(store.categoryTags) { tag in
+                Button { activeTagId = tag.id; highlight(with: tag) } label: {
+                    HStack(spacing: 3) {
+                        RoundedRectangle(cornerRadius: 3).fill(tag.color).frame(width: 10, height: 10)
+                        if showName { Text(tag.name).font(D.small).lineLimit(1).fixedSize() }
+                        if showShortcut && !tag.shortcut.isEmpty {
+                            Text(tag.shortcut).font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(activeTagId == tag.id ? tag.color.opacity(0.22) : tag.color.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                }
+                .buttonStyle(.plain)
+                .help("\(tag.name)\(tag.shortcut.isEmpty ? "" : "  (press \(tag.shortcut))")\(tag.detail.isEmpty ? "" : " — \(tag.detail)")")
+            }
+        }
+    }
+
+    private var focusControls: some View {
         HStack(spacing: D.s2) {
             Button { nav.focusMode = false } label: {
                 Label("Exit reading mode", systemImage: "arrow.down.right.and.arrow.up.left")
@@ -555,16 +665,6 @@ struct ReaderScreen: View {
                 Text(controller.pageLabel).font(D.small.monospacedDigit()).foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, D.s3).padding(.vertical, 5)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().stroke(D.hairline, lineWidth: 0.5))
-        .padding(.top, D.s2)
-        // Faint until you reach for it. A control bar floating over the first lines of a page
-        // is worse than no control bar, and the point of this mode is the page.
-        .opacity(stripHovered ? 1 : 0.28)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) { stripHovered = hovering }
-        }
     }
 
     /// The colours, over the page, only while there is something selected. In reading mode
@@ -600,14 +700,21 @@ struct ReaderScreen: View {
     }
 
     private var hiddenNotice: some View {
-        Button { nav.hideHighlights = false } label: {
-            Label("Your highlights are hidden", systemImage: "eye.slash").font(D.small)
+        Button {
+            // Whichever of the two reasons is hiding them, this brings them back.
+            nav.hideHighlights = false
+            UserDefaults.standard.set(false, forKey: UISettings.dimHighlightsReadingKey)
+        } label: {
+            Label("Your highlights are hidden — click to show them",
+                  systemImage: "eye.slash").font(D.small)
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, D.s3).padding(.vertical, 4)
+        .foregroundStyle(Palette.amber)
+        .padding(.horizontal, D.s3).padding(.vertical, 5)
         .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Palette.amber.opacity(0.5), lineWidth: 1))
         .padding(D.s3)
-        .help("Show them again (⌃⌘H)")
+        .help("Nothing is lost — they are only not drawn (⌃⌘H)")
     }
 
     /// The note box for the passage you just marked, over the page you marked it on.
@@ -685,7 +792,7 @@ struct ReaderScreen: View {
             }
             Spacer()
             SearchField(placeholder: "Find in document", text: $findText) { controller.find(findText) }
-                .frame(width: 190)
+                .frame(width: D.dense ? 140 : 190)
             if !controller.searchMatches.isEmpty {
                 Text("\(controller.searchIndex + 1)/\(controller.searchMatches.count)")
                     .font(D.small.monospacedDigit()).foregroundStyle(.secondary)
@@ -741,24 +848,15 @@ struct ReaderScreen: View {
             // MEANS: the same passage marked as interpretation is your thinking, not the
             // source's words, and the app must never let those blur together.
             HStack(spacing: D.s2) {
-                Text("Recording").font(D.small).foregroundStyle(.secondary)
-                ForEach(Stance.allCases) { st in
-                    Button { stance = st } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: st.icon).font(.system(size: 9))
-                            Text(st.label).font(D.small)
-                        }
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(stance == st ? st.color.opacity(0.18) : Color.secondary.opacity(0.06))
-                        .foregroundStyle(stance == st ? st.color : .secondary)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(stance == st ? st.color : .clear, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .help(st.blurb)
+                // Each of these drops something whole rather than clipping everything: the
+                // caption goes first, then the stance labels, then the word "Recording".
+                // A truncated control is worse than an absent one.
+                ViewThatFits(in: .horizontal) {
+                    stanceRow(prefix: true, labels: true, blurb: true)
+                    stanceRow(prefix: true, labels: true, blurb: false)
+                    stanceRow(prefix: false, labels: true, blurb: false)
+                    stanceRow(prefix: false, labels: false, blurb: false)
                 }
-                Text(stance.blurb).font(.system(size: 10)).foregroundStyle(.tertiary)
-                    .lineLimit(1).frame(width: 220, alignment: .leading)
                 Spacer()
                 Button { showShortcuts = true } label: {
                     HStack(spacing: 3) {
@@ -779,7 +877,7 @@ struct ReaderScreen: View {
             colourStrip
         }
         .padding(.horizontal, D.s4).padding(.vertical, D.s2)
-        .frame(height: 66)
+        .frame(height: D.dense ? 58 : 66)
         .background(D.surface)
         .sheet(isPresented: $showThought) {
             if let p = paper {
@@ -788,30 +886,39 @@ struct ReaderScreen: View {
         }
     }
 
-    private var colourStrip: some View {
+    private func stanceRow(prefix: Bool, labels: Bool, blurb: Bool) -> some View {
         HStack(spacing: D.s2) {
-            Text("as").font(D.small).foregroundStyle(.secondary)
-            ForEach(store.categoryTags) { tag in
-                Button { activeTagId = tag.id; highlight(with: tag) } label: {
-                    HStack(spacing: 5) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(tag.color)
-                            .frame(width: 12, height: 12)
-                        Text(tag.name).font(D.small)
-                        if !tag.shortcut.isEmpty {
-                            Text(tag.shortcut).font(.system(size: 9, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                        }
+            if prefix { Text("Recording").font(D.small).foregroundStyle(.secondary).fixedSize() }
+            ForEach(Stance.allCases) { st in
+                Button { stance = st } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: st.icon).font(.system(size: 9)).accessibilityHidden(true)
+                        if labels { Text(st.label).font(D.small).fixedSize() }
                     }
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(activeTagId == tag.id ? tag.color.opacity(0.18) : Color.secondary.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6)
-                        .stroke(activeTagId == tag.id ? tag.color : .clear, lineWidth: 1.2))
+                    .padding(.horizontal, labels ? 8 : 6).padding(.vertical, 3)
+                    .background(stance == st ? st.color.opacity(0.18) : Color.secondary.opacity(0.06))
+                    .foregroundStyle(stance == st ? st.color : .secondary)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(stance == st ? st.color : .clear, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
-                .help(tag.detail.isEmpty ? "Highlight the selection as \(tag.name)"
-                                         : "\(tag.name) — \(tag.detail)")
+                .help("\(st.label) — \(st.blurb)")
+                .accessibilityLabel(st.label)
+            }
+            if blurb {
+                Text(stance.blurb).font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .lineLimit(1).fixedSize()
+            }
+        }
+    }
+
+    private var colourStrip: some View {
+        HStack(spacing: D.s2) {
+            ViewThatFits(in: .horizontal) {
+                readerColours(prefix: true, showName: true, showShortcut: true)
+                readerColours(prefix: false, showName: true, showShortcut: true)
+                readerColours(prefix: false, showName: true, showShortcut: false)
+                readerColours(prefix: false, showName: false, showShortcut: true)
             }
             Spacer()
             // Fixed width and one line, always. This label used to grow and shrink with the
@@ -824,9 +931,37 @@ struct ReaderScreen: View {
                 .font(D.small)
                 .foregroundStyle(controller.hasSelection ? Palette.accent : Color.secondary.opacity(0.7))
                 .lineLimit(1)
-                .frame(width: 260, alignment: .trailing)
+                .frame(width: D.dense ? 150 : 260, alignment: .trailing)
         }
         .frame(height: 22)
+    }
+
+    private func readerColours(prefix: Bool, showName: Bool, showShortcut: Bool) -> some View {
+        HStack(spacing: D.s2) {
+            if prefix { Text("as").font(D.small).foregroundStyle(.secondary).fixedSize() }
+            ForEach(store.categoryTags) { tag in
+                Button { activeTagId = tag.id; highlight(with: tag) } label: {
+                    HStack(spacing: 5) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(tag.color)
+                            .frame(width: 12, height: 12)
+                        if showName { Text(tag.name).font(D.small).fixedSize() }
+                        if showShortcut && !tag.shortcut.isEmpty {
+                            Text(tag.shortcut).font(.system(size: 9, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal, showName ? 8 : 6).padding(.vertical, 4)
+                    .background(activeTagId == tag.id ? tag.color.opacity(0.18) : Color.secondary.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6)
+                        .stroke(activeTagId == tag.id ? tag.color : .clear, lineWidth: 1.2))
+                }
+                .buttonStyle(.plain)
+                .help("\(tag.name)\(tag.shortcut.isEmpty ? "" : "  (press \(tag.shortcut))")\(tag.detail.isEmpty ? "" : " — \(tag.detail)")")
+                .accessibilityLabel(tag.name)
+            }
+        }
     }
 
     /// Turns the live text selection into a stored piece of evidence.
@@ -845,9 +980,13 @@ struct ReaderScreen: View {
         controller.clearSelection()
         if let place { controller.restore(place) }
         store.flash("Saved as \(stance.label.lowercased()) · \(tag.name) · p.\(geo.page + 1) — ⌘Z undoes it")
-        // The note box opens on the passage you just marked, prefilled with nothing but
-        // already attached to the right highlight.
-        if let e = store.evidence(id) {
+        // Marking a passage marks it, and that is all. Opening a note box on every mark made
+        // one keystroke into two steps, and most of the second step was dismissing it. The
+        // note is written in the highlights panel, where the passage is already listed —
+        // or here, if you have asked for that in Settings.
+        guard let e = store.evidence(id) else { return }
+        selectedEvidenceId = e.id
+        if UISettings.noteOnHighlight {
             withAnimation(.easeOut(duration: 0.15)) { noteTarget = e }
         }
     }
@@ -891,18 +1030,14 @@ struct ReaderScreen: View {
                 return event
             }
 
+            // Reading mode and highlight visibility are deliberately NOT on bare letters.
+            // A stray `h` while the pointer was over the page hid every highlight in the
+            // document, with only a small pill at the corner to say why — which reads as the
+            // app having lost your work. They live on ⌃⌘F and ⌃⌘H, in the View menu.
             switch chars.lowercased() {
-            case "f": nav.focusMode.toggle(); return nil
-            case "h": nav.hideHighlights.toggle(); return nil
             case "-": controller.zoomStep(1 / 1.15); return nil
             case "=", "+": controller.zoomStep(1.15); return nil
             case "0": controller.fitWidth(); return nil
-            case "n":
-                // Write a note on the most recent highlight without hunting for it.
-                if let p = paper, let last = store.evidenceNewestFirst(forPaper: p.id).first {
-                    noteTarget = last
-                }
-                return nil
             default: break
             }
 

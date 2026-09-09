@@ -4,12 +4,22 @@ import AppKit
 /// Visual language: a quiet, paper-like workspace. Nothing competes with the text
 /// you're reading — colour is reserved almost entirely for your own tags.
 enum D {
-    // Spacing
-    static let s1: CGFloat = 4, s2: CGFloat = 8, s3: CGFloat = 12
-    static let s4: CGFloat = 16, s5: CGFloat = 24, s6: CGFloat = 32
+    /// Compact density. The same screens, drawn tighter — for a laptop, where the default
+    /// spacing spends a third of the window on air between things you are trying to compare.
+    /// Read fresh on every access so flipping the switch redraws the app rather than
+    /// requiring a relaunch.
+    static var dense: Bool { UISettings.compact }
 
-    static let radius: CGFloat = 8
-    static let radiusL: CGFloat = 12
+    // Spacing
+    static var s1: CGFloat { dense ? 3 : 4 }
+    static var s2: CGFloat { dense ? 6 : 8 }
+    static var s3: CGFloat { dense ? 8 : 12 }
+    static var s4: CGFloat { dense ? 11 : 16 }
+    static var s5: CGFloat { dense ? 16 : 24 }
+    static var s6: CGFloat { dense ? 22 : 32 }
+
+    static var radius: CGFloat { dense ? 6 : 8 }
+    static var radiusL: CGFloat { dense ? 9 : 12 }
 
     // Surfaces
     static var canvas: Color { Color(nsColor: .underPageBackgroundColor) }
@@ -17,15 +27,19 @@ enum D {
     static var raised: Color { Color(nsColor: .textBackgroundColor) }
     static var hairline: Color { Color(nsColor: .separatorColor) }
 
-    // Type
-    static let title = Font.system(size: 20, weight: .semibold)
-    static let heading = Font.system(size: 14, weight: .semibold)
-    static let body = Font.system(size: 13)
-    static let small = Font.system(size: 11.5)
-    static let mono = Font.system(size: 11.5, design: .monospaced)
-    static let label = Font.system(size: 10.5, weight: .semibold)
+    // Type. Body text shrinks by half a point rather than a whole one: a review is read,
+    // not scanned, and compact must not mean squinting.
+    static var title: Font { .system(size: dense ? 17 : 20, weight: .semibold) }
+    static var heading: Font { .system(size: dense ? 13 : 14, weight: .semibold) }
+    static var body: Font { .system(size: dense ? 12.5 : 13) }
+    static var small: Font { .system(size: dense ? 11 : 11.5) }
+    static var mono: Font { .system(size: dense ? 11 : 11.5, design: .monospaced) }
+    static var label: Font { .system(size: dense ? 10 : 10.5, weight: .semibold) }
 
-    static let serif = Font.system(size: 13.5, design: .serif)
+    static var serif: Font { .system(size: dense ? 13 : 13.5, design: .serif) }
+
+    /// Row height for the dense lists — the sidebar, the paper rail, the screening queue.
+    static var rowPadding: CGFloat { dense ? 2 : 4 }
 }
 
 // MARK: - Building blocks

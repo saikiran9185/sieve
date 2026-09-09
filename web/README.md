@@ -1,7 +1,8 @@
 # Sieve on the web
 
-The same idea as the desktop app, in a browser: read a PDF, mark what matters, and keep every
-highlight tied to the page and source it came from.
+The same workspace as the desktop app, in a browser: find papers, screen them with recorded
+reasons, read and highlight them, and keep every highlight tied to the page and source it came
+from.
 
 **There is no account and no server.** Sources, highlights and the PDF files themselves live on
 your own computer. Nothing is uploaded, which is also why there is nothing to log in to — a
@@ -49,24 +50,62 @@ Choosing a folder needs the File System Access API, which today means **Chrome o
 Safari and Firefox the button becomes **Back up to a file**, which does the same job in one
 file, manually.
 
-## What works
+## What is here
+
+**Finding papers.** Seven databases queried at once — OpenAlex, Crossref, Europe PMC, PubMed,
+DOAJ, PLOS and OpenAIRE — with records describing the same paper folded into one row, so you
+screen each paper once. Every result carries where it came from and the search that found it.
+
+**Screening.** A queue with your inclusion and exclusion terms tinted into each abstract, so
+the words a decision turns on are visible before you read a line. Keyboard-driven, and an
+exclusion asks for its reason because PRISMA needs one.
+
+**The reader.** Three panes, as on the desktop: the papers you can read, the page itself, and
+what you have taken out of it.
+
+- Full **pdf.js** reader with real text selection and find-in-document
+- Highlight in a category's colour by clicking it or pressing its number
+- **Evidence, interpretation or question** — the same passage marked as interpretation is your
+  thinking, not the source's words, and the app never lets those blur together
+- **Add a thought** records an interpretation that is not tied to any passage
+- Highlights are stored as fractions of the page, so they land correctly at any zoom, and a
+  selection dragged past the bottom of a page keeps the page it started on
+- The inspector's three tabs: the highlights, the paper and where it came from, and the
+  include/exclude decision — without leaving the page you are reading
+
+**Beyond the reader.** The evidence board, the extraction matrix, design-research frameworks
+(SWOT, journey and empathy maps, 2×2s), the PRISMA flow diagram with its counts, and methods
+you adopt as a recipe and then edit.
+
+**The citation map.** Papers as nodes, a line where two cite the same works, drawn from the
+reference lists OpenAlex ships with every record — force-directed, pan and zoom. It also finds
+the works your own papers keep citing that are not in your library yet, which is the reading
+you are missing.
+
+**The AI trail.** There is no assistant here — running one would mean sending your library to
+somebody else's computer. But Sieve still writes into your review without you: it reads an
+abstract and a conclusion out of a PDF by pattern, guesses a title when a file has no metadata,
+carries OpenAlex's subject labels across, and folds two database records into one paper. Each
+is logged as a claim to check, you record a verdict, and the disclosure export states exactly
+which were checked and which were not.
+
+**Everywhere.**
 
 - Drop PDFs anywhere on the page; they are stored locally and never leave the machine
-- The paper's own **abstract, keywords and conclusion** are read out of the file — no model,
-  no network, the same text parsing the desktop app does
-- Full **pdf.js** reader with real text selection
-- Highlight in a tag's colour, by clicking it or pressing its number
-- Highlights are stored as fractions of the page, so they land correctly at any zoom
-- Every highlight keeps its page, colour, source and the date it was made
-- Dropping the same PDF twice does nothing — files are matched by content
-- Export highlights as Markdown or CSV
-- **Back up** writes your entire library, PDFs included, to one JSON file you keep
+- A dropped PDF attaches to the record a search already found, rather than becoming a second
+  copy of the same paper; dropping the same file twice does nothing
+- Export highlights as Markdown or CSV, the matrix as CSV, PRISMA as text, the trail as CSV
+- **Back up** writes your entire library — PDFs, matrix, frameworks, method and trail included
+  — to one JSON file you keep
 - Installable, and works with the network off
 
 ## What the desktop app has that this does not
 
-The database search across fourteen sources, PRISMA, the literature matrix, frameworks, the
-evidence graph, the AI trail. This is the reading and highlighting core, not a replacement.
+Two things the browser genuinely cannot do. It cannot search **CORE or arXiv**, which send no
+CORS header, or the four databases behind **paid API keys** — the search screen names them
+rather than hiding them. And it has **no assistant**, for the reason above.
+
+Beyond that, the desktop app adds folders and collections, and XLSX and Word export.
 
 ## Running it yourself
 

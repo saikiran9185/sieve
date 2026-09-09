@@ -88,7 +88,11 @@ function safeName(title, id) {
 /// Writes the whole library into the folder: one PDF per source, plus an index describing
 /// every highlight with the page and source it came from. A person who never opens this app
 /// again can still read both.
-export async function syncFolder(handle, { sources, evidence, tags, fileFor }) {
+///
+/// `rest` carries everything else the review holds — the matrix, the frameworks, the method,
+/// the trail. It is passed whole rather than named field by field so that adding a store to
+/// the app can never quietly leave it out of the copy people restore from.
+export async function syncFolder(handle, { sources, evidence, tags, fileFor, rest = {} }) {
   const pdfs = await subdir(handle, 'PDFs');
   const written = [];
   for (const s of sources) {
@@ -116,6 +120,7 @@ export async function syncFolder(handle, { sources, evidence, tags, fileFor }) {
     })),
     tags,
     evidence,
+    ...rest,
   };
   await writeFile(handle, 'sieve-library.json', new Blob([JSON.stringify(index, null, 2)], { type: 'application/json' }));
 
@@ -127,7 +132,8 @@ export async function syncFolder(handle, { sources, evidence, tags, fileFor }) {
     'need is here.',
     '',
     '  PDFs/               every source, as an ordinary PDF you can open in anything',
-    '  sieve-library.json  the index: your highlights, their pages, tags and sources',
+    '  sieve-library.json  the index: your highlights, their pages, tags, sources, and the',
+    '                      rest of the review — matrix, frameworks, method, AI trail',
     '',
     'To restore: open Sieve, choose Restore, and pick sieve-library.json.',
     '',

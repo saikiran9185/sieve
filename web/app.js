@@ -1,43 +1,214 @@
-// Sieve on the web.
+// Sieve on the web — the shell.
 //
-// The same argument as the desktop app, in a browser: evidence stays tied to where it came
-// from, and the library belongs to whoever is reading it. That second half is why there is no
-// login. A sign-in screen implies a server holding your reading, and the moment that exists
-// the tool is renting your own research back to you. Everything here is in IndexedDB on this
-// machine; "Back up" writes a file you keep.
+// Holds the state every screen reads, routes between them, and owns the things that touch
+// storage. The screens themselves are in views.js and reader.js; this is what they hang off.
+//
+// The argument is unchanged from the desktop app: evidence stays tied to where it came from,
+// and the library belongs to whoever is reading it. There is no account because there is no
+// server — a sign-in would mean somewhere holding your research.
 
 import * as db from './db.js';
-import { Reader } from './reader.js';
 import * as store from './storage.js';
+import { Reader } from './reader.js';
+import * as views from './views.js';
+import * as inspector from './inspector.js';
+import * as method from './method.js';
+import * as mapView from './map.js';
+import * as trail from './trail.js';
+import { dedupeKey } from './search.js';
 
 const $ = (s) => document.querySelector(s);
-const el = (tag, cls, text) => {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (text != null) n.textContent = text;
-  return n;
-};
+const el = views.el;
+const chip = views.chip;
 
-const state = { sources: [], evidence: [], tags: [], openId: null, activeTag: null, selection: null };
+const state = {
+  project: null, projects: [],
+  sources: [], evidence: [], tags: [], columns: [], cells: {},
+  frames: [], axes: [], frameCells: {},
+  methods: [], aiEvents: [],
+  openId: null, selection: null, stance: 'evidence', view: 'overview',
+  railFilter: 'included', railQuery: '', railHidden: false,
+};
 let reader = null;
+
+const STANCES = {
+  evidence:       { label: 'Evidence',       color: '#4C8DF2', hint: 'What the source actually says.' },
+  interpretation: { label: 'Interpretation', color: '#9B6BE8', hint: 'What you think it means.' },
+  question:       { label: 'Question',       color: '#F2C14E', hint: "What you don't know yet." },
+};
 
 // ---------------------------------------------------------------- boot
 
 async function boot() {
-  state.tags = await db.seed();
+  state.projects = await db.seed();
+  const savedId = (await db.get('meta', 'currentProject'))?.value;
+  state.project = state.projects.find(p => p.id === savedId) || state.projects[0];
   await refresh();
   wire();
-  showView('library');
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
+  go('overview');
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   await showSafety();
 }
 
-// ---------------------------------------------------------------- keeping the work
+/// Reloads everything for the current review. Scoping happens here so no screen has to
+/// remember to filter, and two reviews can never contaminate each other's counts.
+async function refresh() {
+  const pid = state.project?.id;
+  const [sources, evidence, tags, columns, cells, frames, axes, frameCells, files, methods, aiEvents] =
+    await Promise.all(['sources','evidence','tags','columns','cells','frames','axes','frameCells','files',
+                       'methods','aiEvents'].map(db.all));
 
-/// Says plainly whether the library is safe, because "it is in your browser" is not an
-/// answer anyone can act on. Three states, in the order they matter.
+  const mine = r => r.projectId === pid;
+  const withFiles = new Set(files.map(f => f.sourceId));
+  state.sources = sources.filter(mine).map(s => ({ ...s, hasFile: withFiles.has(s.id) }));
+  state.evidence = evidence.filter(mine);
+  state.tags = tags.filter(mine);
+  state.columns = columns.filter(mine);
+  state.frames = frames.filter(mine);
+  state.axes = axes.filter(mine);
+  state.cells = Object.fromEntries(cells.filter(mine).map(c => [c.key, c]));
+  state.frameCells = Object.fromEntries(frameCells.filter(mine).map(c => [c.key, c]));
+  // Recipes belong to no review; the method being run belongs to this one.
+  state.methods = methods.filter(m => m.isTemplate || m.projectId === pid);
+  state.aiEvents = aiEvents.filter(mine);
+
+  $('#projectName').textContent = state.project?.name || 'Review';
+  $('#projectMeta').textContent =
+    `${state.sources.length} source${state.sources.length === 1 ? '' : 's'} · ${state.evidence.length} highlight${state.evidence.length === 1 ? '' : 's'}`;
+  const toScreen = state.sources.filter(s => s.stage === 'identified').length;
+  $('#badgeScreening').textContent = toScreen || '';
+  $('#badgeEvidence').textContent = state.evidence.length || '';
+  $('#badgeTags').textContent = state.tags.length || '';
+  $('#badgeTrail').textContent = trail.pendingCount(state) || '';
+  showMethodLine();
+  renderCurrent();
+}
+
+// ---------------------------------------------------------------- routing
+
+const RENDERERS = {
+  overview: (r) => views.renderOverview(ctx, r),
+  find: (r) => views.renderFind(ctx, r),
+  screening: (r) => views.renderScreening(ctx, r),
+  matrix: (r) => views.renderMatrix(ctx, r),
+  frames: (r) => views.renderFrames(ctx, r),
+  prisma: (r) => views.renderPrisma(ctx, r),
+  settings: (r) => renderSettings(r),
+  method: (r) => method.render(ctx, r),
+  map: (r) => mapView.render(ctx, r),
+  trail: (r) => trail.render(ctx, r),
+  library: () => renderLibrary(),
+  evidence: () => renderEvidence(),
+  tags: () => renderTags(),
+  reader: () => { renderRail(); renderPalette(); renderInspector(); },
+};
+
+function go(name) {
+  state.view = name;
+  for (const v of document.querySelectorAll('.view')) v.classList.toggle('hidden', v.id !== name);
+  for (const b of document.querySelectorAll('.nav')) b.setAttribute('aria-current', String(b.dataset.view === name));
+  renderCurrent();
+}
+function renderCurrent() {
+  const fn = RENDERERS[state.view];
+  if (fn) fn(document.querySelector('#' + state.view));
+}
+
+// ---------------------------------------------------------------- shared helpers for views
+
+const ctx = {
+  state, refresh, go, toast, openSource,
+  prompt: promptFor, sheet, download,
+  async setStage(id, stage, reason = '') {
+    const s = await db.get('sources', id);
+    if (!s) return;
+    s.stage = stage; s.reason = reason;
+    await db.put('sources', s);
+    await refresh();
+    scheduleSync();
+  },
+  async addFromHits(hits, query) {
+    const have = new Set(state.sources.map(s => s.dedupeKey));
+    let added = 0;
+    for (const h of hits) {
+      const key = dedupeKey(h);
+      if (have.has(key)) continue;
+      have.add(key);
+      const id = await db.put('sources', {
+        projectId: state.project.id, title: h.title, authors: h.authors, year: h.year,
+        venue: h.venue, doi: h.doi, abstract: h.abstract, url: h.url, pdfURL: h.pdfURL,
+        provider: [h.provider, ...(h.alsoFrom || [])].join(' + '), sdgs: h.sdgs || [],
+        citedBy: h.citedBy || 0, stage: 'identified', reason: '', dedupeKey: key,
+        keywords: [], conclusion: '', conclusionHeading: '', notes: '', toRead: '',
+        openAlexId: h.openAlexId || '', references: h.references || [],
+        added: new Date().toISOString(), foundBy: query,
+      });
+      added++;
+      // Two machine judgements worth being able to check later: that these records were the
+      // same paper, and that these subject labels describe it.
+      if ((h.alsoFrom || []).length) {
+        await db.trail(state.project.id, 'mergeRecords', id,
+          `Records from ${[h.provider, ...h.alsoFrom].join(', ')} were folded into one paper: “${h.title}”.`);
+      }
+      if ((h.sdgs || []).length) {
+        await db.trail(state.project.id, 'labelSDG', id,
+          `Labelled ${h.sdgs.join(', ')} — OpenAlex's classifier, not the authors' words.`);
+      }
+    }
+    if (added) { await db.put('searchRuns', { projectId: state.project.id, query, added, at: new Date().toISOString() }); }
+    await refresh();
+    scheduleSync();
+    return added;
+  },
+};
+
+function showMethodLine() {
+  const m = method.active(state);
+  $('#methodName').textContent = m ? m.name : 'Choose a method';
+  $('#methodStep').textContent = m
+    ? (m.step >= m.blocks.length
+        ? 'every step done'
+        : `step ${m.step + 1} of ${m.blocks.length} · ${db.METHOD_BLOCKS[m.blocks[m.step]]?.label || ''}`)
+    : 'optional — the app works without one';
+}
+
+function download(name, text, type = 'text/plain') {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function sheet(title, build) {
+  const modal = $('#modal'), body = $('#modalBody');
+  body.innerHTML = '';
+  body.appendChild(el('h2', null, title));
+  const close = () => { modal.classList.add('hidden'); body.innerHTML = ''; };
+  build(body, close);
+  modal.classList.remove('hidden');
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+}
+
+function promptFor(title, hint, done) {
+  sheet(title, (body, close) => {
+    const f = el('div', 'field');
+    if (hint) f.appendChild(el('label', null, hint));
+    const input = el('input');
+    f.appendChild(input);
+    body.appendChild(f);
+    const actions = el('div', 'actions');
+    const cancel = el('button', 'quiet', 'Cancel'); cancel.onclick = close;
+    const ok = el('button', 'primary', 'Add');
+    ok.onclick = async () => { const v = input.value.trim(); close(); await done(v); };
+    input.onkeydown = e => { if (e.key === 'Enter') ok.click(); };
+    actions.append(cancel, ok);
+    body.appendChild(actions);
+    setTimeout(() => input.focus(), 30);
+  });
+}
+
+// ---------------------------------------------------------------- storage safety
+
 async function showSafety() {
   const dot = $('#safetyDot'), text = $('#safetyText'), btn = $('#folderBtn');
   const handle = await store.savedFolder(db).catch(() => null);
@@ -45,42 +216,39 @@ async function showSafety() {
   const persisted = await store.persistenceState();
 
   if (handle && perm === 'granted') {
-    dot.className = 'dot good';
-    text.textContent = `Copied to ${handle.name}`;
-    btn.textContent = 'Sync now';
-    btn.onclick = () => syncNow(handle);
+    dot.className = 'dot good'; text.textContent = `Copied to ${handle.name}`;
+    btn.textContent = 'Sync now'; btn.onclick = () => syncNow(handle);
   } else if (handle && perm === 'prompt') {
-    // The permission is dropped when the browser restarts and can only be asked for again
-    // from a click, so this has to be a button rather than something automatic.
-    dot.className = 'dot warn';
-    text.textContent = 'Folder needs reconnecting';
+    dot.className = 'dot warn'; text.textContent = 'Folder needs reconnecting';
     btn.textContent = `Reconnect ${handle.name}`;
     btn.onclick = async () => {
-      if (await store.reconnectFolder(handle)) { await syncNow(handle); }
+      if (await store.reconnectFolder(handle)) await syncNow(handle);
       else toast('Permission declined — the browser copy is still there');
       await showSafety();
     };
   } else if (persisted === 'persistent') {
-    dot.className = 'dot good';
-    text.textContent = 'Saved on this computer';
+    dot.className = 'dot good'; text.textContent = 'Saved on this computer';
     btn.textContent = store.folderSupported() ? 'Also keep a folder copy' : 'Back up to a file';
-    btn.onclick = store.folderSupported() ? pickFolder : $('#exportBtn').onclick;
+    btn.onclick = store.folderSupported() ? pickFolder : () => $('#exportBtn').click();
   } else {
-    dot.className = 'dot bad';
-    text.textContent = 'Could be cleared by the browser';
+    dot.className = 'dot bad'; text.textContent = 'Could be cleared by the browser';
     btn.textContent = store.folderSupported() ? 'Keep a copy in a folder' : 'Back up to a file';
-    btn.onclick = store.folderSupported() ? pickFolder : $('#exportBtn').onclick;
+    btn.onclick = store.folderSupported() ? pickFolder : () => $('#exportBtn').click();
   }
   await showStorage();
 }
 
+async function showStorage() {
+  const u = await db.usage();
+  if (!u) return;
+  const size = (n) => n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} GB`
+             : n >= 1048576 ? `${Math.round(n / 1048576)} MB` : `${Math.round(n / 1024)} KB`;
+  $('#storage').textContent = `${size(u.usage)} used · about ${size(u.quota)} available here.`;
+}
+
 async function pickFolder() {
-  try {
-    const handle = await store.chooseFolder(db);
-    await syncNow(handle);
-  } catch (err) {
-    if (err.name !== 'AbortError') toast(err.message || 'Could not use that folder');
-  }
+  try { await syncNow(await store.chooseFolder(db)); }
+  catch (err) { if (err.name !== 'AbortError') toast(err.message || 'Could not use that folder'); }
   await showSafety();
 }
 
@@ -88,61 +256,33 @@ async function syncNow(handle) {
   if (!state.sources.length) { toast('Nothing to copy yet'); await showSafety(); return; }
   toast('Copying to your folder…');
   try {
-    const n = await store.syncFolder(handle, {
-      sources: state.sources, evidence: state.evidence, tags: state.tags,
-      fileFor: (id) => db.get('files', id),
-    });
+    const n = await store.syncFolder(handle, { ...(await folderPayload()), fileFor: (id) => db.get('files', id) });
     toast(`${n} PDF${n === 1 ? '' : 's'} and an index written to ${handle.name}`);
-  } catch (err) {
-    toast('Could not write to that folder — reconnect it');
-  }
+  } catch { toast('Could not write to that folder — reconnect it'); }
   await showSafety();
 }
 
-/// Called after anything that changes the library, so the folder copy does not drift.
+/// Everything the folder copy has to carry. Built from the store list rather than from named
+/// fields, so a store added to the app cannot go missing from the copy people restore from.
+async function folderPayload() {
+  const rest = {};
+  for (const name of db.STORES) {
+    if (name === 'sources' || name === 'evidence' || name === 'tags') continue;
+    rest[name] = await db.all(name);
+  }
+  return { sources: state.sources, evidence: state.evidence, tags: state.tags, rest };
+}
+
 let syncTimer = null;
 function scheduleSync() {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(async () => {
     const handle = await store.savedFolder(db).catch(() => null);
-    if (!handle) return;
-    if ((await store.folderPermission(handle)) !== 'granted') return;
+    if (!handle || (await store.folderPermission(handle)) !== 'granted') return;
     try {
-      await store.syncFolder(handle, {
-        sources: state.sources, evidence: state.evidence, tags: state.tags,
-        fileFor: (id) => db.get('files', id),
-      });
+      await store.syncFolder(handle, { ...(await folderPayload()), fileFor: (id) => db.get('files', id) });
     } catch {}
   }, 2500);
-}
-
-async function refresh() {
-  [state.sources, state.evidence] = await Promise.all([db.all('sources'), db.all('evidence')]);
-  state.tags = await db.all('tags');
-  $('#libraryCount').textContent =
-    `${state.sources.length} source${state.sources.length === 1 ? '' : 's'} · ${state.evidence.length} highlight${state.evidence.length === 1 ? '' : 's'}`;
-  renderLibrary();
-  renderEvidence();
-  renderTags();
-}
-
-async function showStorage() {
-  const u = await db.usage();
-  if (!u) return;
-  // "10246 MB" is not a quantity anyone reads. Scale the unit.
-  const size = (n) => n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} GB`
-             : n >= 1048576 ? `${Math.round(n / 1048576)} MB`
-             : `${Math.round(n / 1024)} KB`;
-  $('#storage').textContent = `${size(u.usage)} used · about ${size(u.quota)} available here.`;
-}
-
-// ---------------------------------------------------------------- views
-
-function showView(name) {
-  for (const v of document.querySelectorAll('.view')) v.classList.toggle('hidden', v.id !== name);
-  for (const b of document.querySelectorAll('.nav')) {
-    b.setAttribute('aria-current', String(b.dataset.view === name));
-  }
 }
 
 // ---------------------------------------------------------------- library
@@ -151,156 +291,340 @@ function renderLibrary() {
   const list = $('#sourceList');
   const q = $('#filter').value.toLowerCase();
   const stage = $('#stageFilter').value;
-  list.innerHTML = '';
 
+  const sel = $('#stageFilter');
+  if (sel.options.length <= 1) {
+    for (const [k, v] of Object.entries(db.STAGES)) sel.appendChild(new Option(v.label, k));
+  }
+  list.innerHTML = '';
   const rows = state.sources.filter(s => {
-    if (stage === 'excluded' ? !String(s.stage).startsWith('excluded') : stage && s.stage !== stage) return false;
+    if (stage && s.stage !== stage) return false;
     if (!q) return true;
     return (s.title + ' ' + (s.authors || []).join(' ')).toLowerCase().includes(q);
   });
+  $('#libraryCount').textContent = `${rows.length} of ${state.sources.length}`;
 
-  $('#libraryEmpty').classList.toggle('hidden', state.sources.length > 0);
-  for (const s of rows) {
-    const n = state.evidence.filter(e => e.sourceId === s.id).length;
-    const card = el('div', 'card');
-    card.appendChild(el('h4', null, s.title));
-    card.appendChild(el('div', 'meta',
-      [(s.authors || []).slice(0, 3).join(', ') || 'Unknown author', s.year, s.pages ? `${s.pages} pages` : null]
-        .filter(Boolean).join(' · ')));
-
-    const chips = el('div', 'chips');
-    chips.appendChild(stageChip(s.stage));
-    if (n) { const c = el('span', 'chip', `${n} highlight${n === 1 ? '' : 's'}`); c.style.color = 'var(--amber)'; chips.appendChild(c); }
-    for (const k of (s.keywords || []).slice(0, 4)) {
-      const c = el('span', 'chip', k); c.style.color = 'var(--faint)'; chips.appendChild(c);
-    }
-    card.appendChild(chips);
-
-    if (s.abstract) {
-      const p = el('p', 'meta', s.abstract.slice(0, 260) + (s.abstract.length > 260 ? '…' : ''));
-      p.style.marginTop = '7px';
-      card.appendChild(p);
-    }
-    if (s.conclusion) {
-      const d = el('details');
-      d.appendChild(el('summary', 'meta', s.conclusionHeading
-        ? `The paper's ${s.conclusionHeading.toLowerCase()} — read from the PDF`
-        : 'Closing paragraphs — read from the PDF'));
-      d.appendChild(el('p', 'meta', s.conclusion.slice(0, 1200)));
-      card.appendChild(d);
-    }
-
-    const actions = el('div', 'actions');
-    const read = el('button', 'primary', 'Read');
-    read.onclick = () => openSource(s.id);
-    actions.appendChild(read);
-    for (const [label, stageValue] of [['Include', 'included'], ['Exclude', 'excludedScreening']]) {
-      const b = el('button', 'quiet', label);
-      b.onclick = async () => { s.stage = stageValue; await db.put('sources', s); await refresh(); };
-      actions.appendChild(b);
-    }
-    const rm = el('button', 'quiet danger', 'Remove');
-    rm.onclick = async () => {
-      if (!confirm(`Remove “${s.title}”? Its highlights go too.`)) return;
-      for (const e of state.evidence.filter(e => e.sourceId === s.id)) await db.del('evidence', e.id);
-      await db.del('files', s.id);
-      await db.del('sources', s.id);
-      await refresh(); toast('Removed');
-    };
-    actions.appendChild(rm);
-    card.appendChild(actions);
-    list.appendChild(card);
+  if (!state.sources.length) {
+    const e = el('div', 'empty');
+    e.appendChild(el('h2', null, 'Nothing here yet'));
+    e.appendChild(el('p', null, 'Search the databases under Find papers, or drop PDFs anywhere on this page. They are stored on this computer and never uploaded.'));
+    list.appendChild(e);
+    return;
   }
+  for (const s of rows) list.appendChild(sourceCard(s));
 }
 
-function stageChip(stage) {
-  const map = {
-    identified: ['To screen', 'var(--faint)'],
-    included: ['Included', 'var(--emerald)'],
-    excludedScreening: ['Excluded', 'var(--rose)'],
+function sourceCard(s) {
+  const n = state.evidence.filter(e => e.sourceId === s.id).length;
+  const card = el('div', 'card');
+  card.appendChild(el('h4', null, s.title));
+  card.appendChild(el('div', 'meta',
+    [(s.authors || []).slice(0, 3).join(', ') || 'Unknown author', s.year, s.venue, s.pages ? `${s.pages} pages` : null]
+      .filter(Boolean).join(' · ')));
+
+  const chips = el('div', 'chips');
+  const st = db.STAGES[s.stage] || db.STAGES.identified;
+  chips.appendChild(chip(st.label, st.color));
+  if (s.provider) chips.appendChild(chip(s.provider, 'var(--faint)'));
+  if (s.hasFile) chips.appendChild(chip('PDF', 'var(--emerald)'));
+  else if (s.pdfURL) chips.appendChild(chip('free PDF online', 'var(--accent)'));
+  if (n) chips.appendChild(chip(`${n} highlight${n === 1 ? '' : 's'}`, 'var(--amber)'));
+  for (const g of (s.sdgs || []).slice(0, 2)) chips.appendChild(chip(g, 'var(--accent)'));
+  if (s.reason) chips.appendChild(chip(s.reason, 'var(--faint)'));
+  card.appendChild(chips);
+
+  if (s.abstract) {
+    const p = el('p', 'meta', s.abstract.slice(0, 240) + (s.abstract.length > 240 ? '…' : ''));
+    p.style.marginTop = '7px';
+    card.appendChild(p);
+  }
+
+  const actions = el('div', 'actions');
+  if (s.hasFile) {
+    const read = el('button', 'primary', 'Read');
+    read.onclick = () => { openSource(s.id); go('reader'); };
+    actions.appendChild(read);
+  } else if (s.pdfURL) {
+    const open = el('button', 'quiet', 'Open free PDF');
+    open.onclick = () => window.open(s.pdfURL, '_blank', 'noopener');
+    actions.appendChild(open);
+    const note = el('button', 'quiet', 'Then drop it here');
+    note.disabled = true;
+    actions.appendChild(note);
+  }
+  if (s.url) {
+    const src = el('button', 'quiet', 'Source page');
+    src.onclick = () => window.open(s.url, '_blank', 'noopener');
+    actions.appendChild(src);
+  }
+  const rm = el('button', 'quiet danger', 'Remove');
+  rm.onclick = async () => {
+    if (!confirm(`Remove “${s.title}”? Its highlights go too.`)) return;
+    for (const e of state.evidence.filter(e => e.sourceId === s.id)) await db.del('evidence', e.id);
+    await db.del('files', s.id); await db.del('sources', s.id);
+    await refresh(); toast('Removed');
   };
-  const [label, color] = map[stage] || map.identified;
-  const c = el('span', 'chip', label);
-  c.style.color = color;
-  return c;
+  actions.appendChild(rm);
+  card.appendChild(actions);
+  return card;
 }
 
 // ---------------------------------------------------------------- import
 
 async function addFiles(files) {
-  // Asked here rather than on load: browsers weigh the request on whether the site is
-  // actually used, and a first visit with an empty library is the weakest moment to ask.
   if (!state.sources.length) await store.requestPersistence().catch(() => {});
-  let added = 0, already = 0;
+  let added = 0, already = 0, attached = 0;
   for (const file of files) {
     if (!/\.pdf$/i.test(file.name)) continue;
     const buf = await file.arrayBuffer();
-    // Same idea as the desktop app: identify by content so re-dropping the same paper does
-    // not make a second copy of it.
     const digest = await crypto.subtle.digest('SHA-256', buf.slice(0, 262144));
     const hash = [...new Uint8Array(digest)].slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join('') + '-' + buf.byteLength;
     if (state.sources.some(s => s.fileHash === hash)) { already++; continue; }
 
+    let sec = {};
+    try { sec = await Reader.readSections(new Blob([buf])); } catch {}
+
+    // A dropped PDF is very often one of the records already found by a search. Match it on
+    // title so it attaches rather than becoming a second copy of the same paper.
+    const key = dedupeKey({ doi: '', title: sec.title || file.name, year: null });
+    const existing = state.sources.find(s => !s.hasFile &&
+      (s.dedupeKey === key || similarTitle(s.title, sec.title || '')));
+
+    if (existing) {
+      const rec = await db.get('sources', existing.id);
+      Object.assign(rec, {
+        fileHash: hash, pages: sec.pageCount,
+        abstract: rec.abstract || sec.abstract || '',
+        keywords: rec.keywords?.length ? rec.keywords : (sec.keywords || []),
+        conclusion: sec.conclusion || rec.conclusion || '',
+        conclusionHeading: sec.conclusionHeading || rec.conclusionHeading || '',
+      });
+      await db.put('sources', rec);
+      await db.put('files', { sourceId: existing.id, name: file.name, blob: new Blob([buf], { type: 'application/pdf' }) });
+      await logExtraction(existing.id, sec, rec);
+      attached++;
+      continue;
+    }
+
     const source = {
-      title: file.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' '),
-      authors: [], year: null, stage: 'identified', fileHash: hash,
-      added: new Date().toISOString(), abstract: '', keywords: [], conclusion: '', conclusionHeading: '',
+      projectId: state.project.id,
+      title: sec.title || file.name.replace(/\.pdf$/i, '').replace(/[_-]+/g, ' '),
+      authors: [], year: null, stage: 'identified', reason: '', fileHash: hash,
+      provider: 'Dropped PDF', dedupeKey: key, sdgs: [],
+      abstract: sec.abstract || '', keywords: sec.keywords || [],
+      conclusion: sec.conclusion || '', conclusionHeading: sec.conclusionHeading || '',
+      pages: sec.pageCount, added: new Date().toISOString(),
     };
     const id = await db.put('sources', source);
-    source.id = id;
     await db.put('files', { sourceId: id, name: file.name, blob: new Blob([buf], { type: 'application/pdf' }) });
-
-    // Read the paper's own title, abstract, keywords and conclusion straight out of the file.
-    try {
-      const sec = await Reader.readSections(new Blob([buf]));
-      Object.assign(source, {
-        title: sec.title || source.title,
-        abstract: sec.abstract || '', keywords: sec.keywords || [],
-        conclusion: sec.conclusion || '', conclusionHeading: sec.conclusionHeading || '',
-        pages: sec.pageCount,
-      });
-      if (!sec.hasText) {
-        source.note = 'This PDF is a scan with no text layer — nothing to read or highlight without OCR.';
-      }
-      await db.put('sources', source);
-    } catch (err) {
-      console.warn('could not read sections', err);
-    }
+    await logExtraction(id, sec, source, !sec.title);
     added++;
   }
   await refresh();
-  toast(added
-    ? `Added ${added} PDF${added === 1 ? '' : 's'}${already ? ` · ${already} already here` : ''}`
-    : (already ? 'Already in your library — nothing duplicated' : 'No PDFs in that drop'));
+  const parts = [];
+  if (added) parts.push(`${added} added`);
+  if (attached) parts.push(`${attached} attached to records you already had`);
+  if (already) parts.push(`${already} already here`);
+  toast(parts.length ? parts.join(' · ') : 'No PDFs in that drop');
   await showSafety();
+  scheduleSync();
+}
+
+/// Nothing here was typed by a person: an abstract and a conclusion found by matching
+/// headings, and sometimes a title taken from the first plausible line on page one. Each
+/// goes in the trail as a claim to check rather than as a fact.
+async function logExtraction(sourceId, sec, record, titleGuessed = false) {
+  if (sec.abstract && !record.abstractLogged) {
+    await db.trail(state.project.id, 'extractSection', sourceId,
+      `Abstract, read out of the PDF: ${sec.abstract.slice(0, 500)}`);
+  }
+  if (sec.conclusion) {
+    await db.trail(state.project.id, 'extractSection', sourceId,
+      `“${sec.conclusionHeading || 'Conclusion'}”, read out of the PDF: ${sec.conclusion.slice(0, 500)}`);
+  }
+  if (titleGuessed && record.title) {
+    await db.trail(state.project.id, 'guessTitle', sourceId,
+      `Title taken from the filename, because the PDF carried no usable metadata: “${record.title}”.`);
+  } else if (sec.title && !record.dedupeKeyMatched) {
+    await db.trail(state.project.id, 'guessTitle', sourceId,
+      `Title read off the first page: “${sec.title}”.`);
+  }
+}
+
+function similarTitle(a, b) {
+  if (!a || !b) return false;
+  const norm = s => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 3));
+  const x = norm(a), y = norm(b);
+  if (!x.size || !y.size) return false;
+  const shared = [...x].filter(w => y.has(w)).length;
+  return shared / Math.min(x.size, y.size) >= 0.6;
 }
 
 // ---------------------------------------------------------------- reader
 
 async function openSource(id) {
   const source = state.sources.find(s => s.id === id);
+  if (!source) return;
   const file = await db.get('files', id);
-  if (!source || !file) { toast('That file is missing'); return; }
   state.openId = id;
-  showView('reader');
-  $('#readerTitle').textContent = source.title;
+  // A filter that hides the paper you just opened is a filter that is wrong about what you
+  // are doing. Widen it rather than showing an empty list next to a full reader.
+  if (!railPapers().some(s => s.id === id)) {
+    state.railFilter = source.hasFile ? 'withPDF' : 'all';
+  }
+  showReaderHeader(source);
+  renderRail();
+  if (!file) {
+    // A record with no PDF is a normal state — it was found by a search and not retrieved
+    // yet — so the reader says so and offers the way out rather than refusing to open.
+    reader = null;
+    $('#pages').innerHTML = '';
+    const box = el('div', 'empty');
+    box.appendChild(el('h2', null, 'No PDF stored for this record'));
+    box.appendChild(el('p', null, source.pdfURL
+      ? 'There is a free PDF for it online. Open it, then drop the file anywhere on this page and it will attach to this record.'
+      : 'Drop the file anywhere on this page and it will attach to this record.'));
+    if (source.pdfURL) {
+      const b = el('button', 'primary', 'Open the free PDF');
+      b.onclick = () => window.open(source.pdfURL, '_blank', 'noopener');
+      box.appendChild(b);
+    }
+    $('#pages').appendChild(box);
+    renderPalette();
+    renderInspector();
+    return;
+  }
   $('#pages').innerHTML = '<p class="hint" style="padding:20px">Rendering…</p>';
-
   reader = new Reader($('#pages'));
   reader.onSelectionChange = (geo) => {
     state.selection = geo;
     $('#selectionHint').textContent = geo
-      ? `${geo.quote.split(/\s+/).length} words selected — click a colour or press its number.`
+      ? `${geo.quote.split(/\s+/).length} words selected`
       : 'Select text, then click a colour or press its number.';
     renderPalette();
   };
+  reader.onPageChange = () => showPageLabel();
   await reader.load(file.blob);
   drawEvidence();
+  showPageLabel();
   renderPalette();
-  renderReaderEvidence();
+  renderInspector();
+}
+
+function showReaderHeader(source) {
+  $('#readerTitle').textContent = source ? source.title : 'No paper open';
+  $('#readerByline').textContent = source
+    ? [(source.authors || []).slice(0, 3).join(', ') || 'Unknown author', source.year || 'n.d.', source.venue]
+        .filter(Boolean).join(' · ')
+    : '';
+}
+
+function showPageLabel() {
+  $('#pageLabel').textContent = reader && reader.pageCount
+    ? `${reader.currentPage + 1} / ${reader.pageCount}` : '';
+}
+
+// ---------------------------------------------------------------- the reader's paper list
+
+const RAIL_FILTERS = {
+  included: (s) => s.stage === 'included',
+  withPDF: (s) => s.hasFile,
+  marked: (s) => state.evidence.some(e => e.sourceId === s.id),
+  all: () => true,
+};
+
+/// The reader's own view of the library. "Included" is the default because the point of this
+/// screen is the papers that made it into the review.
+function railPapers() {
+  const q = state.railQuery.toLowerCase();
+  return state.sources
+    .filter(RAIL_FILTERS[state.railFilter] || RAIL_FILTERS.all)
+    .filter(s => !q || (s.title + ' ' + (s.authors || []).join(' ')).toLowerCase().includes(q))
+    .sort((a, b) => Number(b.hasFile) - Number(a.hasFile) || a.title.localeCompare(b.title));
+}
+
+function renderRail() {
+  const list = $('#railList');
+  const rows = railPapers();
+  $('#railCount').textContent = String(rows.length);
+  $('#railFilter').value = state.railFilter;
+  list.innerHTML = '';
+
+  if (!rows.length) {
+    const box = el('div', 'rail-empty');
+    box.appendChild(el('p', 'hint', state.railFilter === 'included'
+      ? 'No papers included yet.' : 'Nothing here.'));
+    if (state.railFilter !== 'all') {
+      const b = el('button', 'quiet', 'Show every paper');
+      b.onclick = () => { state.railFilter = 'all'; renderRail(); };
+      box.appendChild(b);
+    }
+    list.appendChild(box);
+    return;
+  }
+  for (const s of rows) {
+    const n = state.evidence.filter(e => e.sourceId === s.id).length;
+    const row = el('button', 'rail-item');
+    row.setAttribute('aria-current', String(s.id === state.openId));
+    row.appendChild(el('span', 'rail-title', s.title));
+    row.appendChild(el('span', 'meta',
+      `${(s.authors || [])[0] || 'Unknown author'} · ${s.year || 'n.d.'}`));
+    const chips = el('div', 'chips');
+    const st = db.STAGES[s.stage] || db.STAGES.identified;
+    chips.appendChild(chip(st.label, st.color));
+    if (n) chips.appendChild(chip(String(n), 'var(--amber)'));
+    if (!s.hasFile) chips.appendChild(chip('no PDF', 'var(--faint)'));
+    row.appendChild(chips);
+    row.onclick = () => openSource(s.id);
+    list.appendChild(row);
+  }
+}
+
+function stepPaper(delta) {
+  const rows = railPapers();
+  if (!rows.length) return;
+  const at = rows.findIndex(s => s.id === state.openId);
+  const next = rows[(at + delta + rows.length) % rows.length];
+  if (next) openSource(next.id);
+}
+
+function renderInspector() {
+  inspector.render(ctx, {
+    evidenceCard: (e, compact) => evidenceCard(e, compact),
+    currentPage: () => (reader ? reader.currentPage : 0),
+    saveThought: async (t) => {
+      const ev = {
+        projectId: state.project.id, sourceId: state.openId, page: t.page, rects: [],
+        quote: t.quote, color: t.color, tag: t.tag, note: '', stance: t.stance,
+        created: new Date().toISOString(),
+      };
+      ev.id = await db.put('evidence', ev);
+      state.evidence.push(ev);
+      await refresh();
+      renderInspector();
+      toast(`${STANCES[t.stance].label} recorded`);
+      scheduleSync();
+    },
+  });
 }
 
 function renderPalette() {
+  // The stance switch sits above the colours because it changes what the colour MEANS: the
+  // same passage marked as interpretation is your thinking, not the source's words, and the
+  // app must never let those blur together.
+  const stances = $('#stances');
+  stances.innerHTML = '';
+  for (const [key, s] of Object.entries(STANCES)) {
+    const b = el('button', 'swatch');
+    b.style.color = s.color;
+    b.textContent = s.label;
+    b.setAttribute('aria-pressed', String(state.stance === key));
+    b.title = s.hint;
+    b.onclick = () => { state.stance = key; renderPalette(); };
+    stances.appendChild(b);
+  }
+  $('#stanceBlurb').textContent = STANCES[state.stance].hint;
+
   const box = $('#palette');
   box.innerHTML = '';
   for (const t of state.tags) {
@@ -311,94 +635,72 @@ function renderPalette() {
     b.appendChild(el('span', null, t.name));
     if (t.shortcut) b.appendChild(el('kbd', null, t.shortcut));
     b.disabled = !state.selection;
+    b.title = t.detail || '';
     b.onclick = () => highlight(t);
     box.appendChild(b);
   }
+  $('#thoughtBtn').disabled = !state.openId;
 }
 
 async function highlight(tag) {
   const geo = state.selection;
   if (!geo || !state.openId) { toast('Select some text first'); return; }
   const ev = {
-    sourceId: state.openId, page: geo.page, rects: geo.rects, quote: geo.quote,
-    color: tag.color, tag: tag.name, note: '', stance: 'evidence',
+    projectId: state.project.id, sourceId: state.openId, page: geo.page, rects: geo.rects,
+    quote: geo.quote, color: tag.color, tag: tag.name, note: '', stance: state.stance,
     created: new Date().toISOString(),
   };
   ev.id = await db.put('evidence', ev);
   state.evidence.push(ev);
   window.getSelection().removeAllRanges();
   state.selection = null;
-  renderPalette();
-  drawEvidence();
-  renderReaderEvidence();
+  renderPalette(); drawEvidence(); renderInspector();
   await refresh();
   scheduleSync();
-  toast(`Saved as ${tag.name} · page ${geo.page + 1}`);
+  toast(`Saved as ${STANCES[state.stance].label.toLowerCase()} · ${tag.name} · page ${geo.page + 1}`);
 }
 
 function drawEvidence() {
-  if (!reader) return;
-  reader.setEvidence(state.evidence.filter(e => e.sourceId === state.openId));
-}
-
-function renderReaderEvidence() {
-  const box = $('#readerEvidence');
-  box.innerHTML = '';
-  const here = state.evidence.filter(e => e.sourceId === state.openId)
-    .sort((a, b) => a.page - b.page);
-  if (!here.length) {
-    box.appendChild(el('p', 'hint', 'Nothing highlighted yet. Each highlight is stored with its page, its colour and the source it came from.'));
-    return;
-  }
-  for (const e of here) box.appendChild(evidenceCard(e, true));
+  if (reader) reader.setEvidence(state.evidence.filter(e => e.sourceId === state.openId));
 }
 
 function evidenceCard(e, compact) {
   const source = state.sources.find(s => s.id === e.sourceId);
   const card = el('div', 'card');
   const chips = el('div', 'chips');
-  const tagChip = el('span', 'chip', e.tag || 'Untagged');
-  tagChip.style.color = e.color;
-  chips.appendChild(tagChip);
+  const st = STANCES[e.stance] || STANCES.evidence;
+  chips.appendChild(chip(st.label, st.color));
+  if (e.tag) chips.appendChild(chip(e.tag, e.color));
   chips.appendChild(el('span', 'meta', `page ${e.page + 1}`));
   card.appendChild(chips);
 
   const q = el('p', 'quote', e.quote);
   q.style.borderColor = e.color;
   card.appendChild(q);
-
-  if (!compact && source) {
-    card.appendChild(el('div', 'meta', `${source.title} · added ${new Date(e.created).toLocaleDateString()}`));
-  }
+  if (!compact && source) card.appendChild(el('div', 'meta', source.title));
+  if (e.note) card.appendChild(el('div', 'meta', e.note));
 
   const actions = el('div', 'actions');
-  const jump = el('button', 'quiet', compact ? 'Find it' : 'Open');
+  const jump = el('button', 'quiet', 'Find it');
   jump.onclick = async () => {
-    if (state.openId !== e.sourceId) { await openSource(e.sourceId); }
-    showView('reader');
+    if (state.openId !== e.sourceId) await openSource(e.sourceId);
+    go('reader');
     setTimeout(() => reader && reader.reveal(e), 250);
   };
-  actions.appendChild(jump);
-
   const note = el('button', 'quiet', e.note ? 'Edit note' : 'Add note');
-  note.onclick = async () => {
-    const v = prompt('Why does this matter?', e.note || '');
-    if (v === null) return;
+  note.onclick = () => promptFor('Note', 'Why does this matter?', async (v) => {
+    if (v == null) return;
     e.note = v; await db.put('evidence', e); await refresh();
-    if (state.openId === e.sourceId) renderReaderEvidence();
-  };
-  actions.appendChild(note);
-
+    if (state.openId === e.sourceId) renderInspector();
+  });
   const rm = el('button', 'quiet danger', 'Delete');
   rm.onclick = async () => {
     await db.del('evidence', e.id);
     state.evidence = state.evidence.filter(x => x.id !== e.id);
-    drawEvidence(); renderReaderEvidence(); await refresh();
+    drawEvidence(); renderInspector(); await refresh();
   };
-  actions.appendChild(rm);
+  actions.append(jump, note, rm);
   card.appendChild(actions);
-
-  if (e.note) card.appendChild(el('div', 'meta', e.note));
   return card;
 }
 
@@ -407,18 +709,26 @@ function evidenceCard(e, compact) {
 function renderEvidence() {
   const box = $('#evidenceList');
   const q = ($('#evFilter').value || '').toLowerCase();
+  const strip = $('#evStances');
+  strip.innerHTML = '';
+  strip.style.display = 'flex';
+  strip.style.gap = '5px';
+  for (const [key, s] of Object.entries(STANCES)) {
+    const n = state.evidence.filter(e => (e.stance || 'evidence') === key).length;
+    strip.appendChild(chip(`${s.label} ${n}`, s.color));
+  }
+
   box.innerHTML = '';
   const rows = state.evidence.filter(e => !q || e.quote.toLowerCase().includes(q) || (e.note || '').toLowerCase().includes(q));
   if (!rows.length) {
-    box.appendChild(el('p', 'hint', state.evidence.length
-      ? 'Nothing matches that.'
-      : 'Highlights you make in the reader collect here, each one keeping its page, colour and source.'));
+    box.appendChild(el('p', 'hint', state.evidence.length ? 'Nothing matches that.'
+      : 'Highlights collect here, each keeping its page, colour, stance and source.'));
     return;
   }
-  const byTag = {};
-  for (const e of rows) (byTag[e.tag || 'Untagged'] ||= []).push(e);
-  for (const [tag, list] of Object.entries(byTag)) {
-    const h = el('h3', 'meta', `${tag} · ${list.length}`);
+  const byStance = {};
+  for (const e of rows) (byStance[e.stance || 'evidence'] ||= []).push(e);
+  for (const [key, list] of Object.entries(byStance)) {
+    const h = el('h3', 'meta', `${STANCES[key]?.label || key} · ${list.length}`);
     h.style.margin = '6px 0 0';
     box.appendChild(h);
     for (const e of list) box.appendChild(evidenceCard(e, false));
@@ -432,129 +742,211 @@ function renderTags() {
     const n = state.evidence.filter(e => e.tag === t.name).length;
     const card = el('div', 'card');
     const head = el('div', 'chips');
-    const dot = el('span', 'dot'); dot.style.cssText = `width:16px;height:16px;border-radius:4px;background:${t.color}`;
+    const dot = el('span');
+    dot.style.cssText = `width:16px;height:16px;border-radius:4px;background:${t.color}`;
     head.appendChild(dot);
     head.appendChild(el('strong', null, t.name));
     head.appendChild(el('span', 'meta', `${n} highlight${n === 1 ? '' : 's'}`));
+    if (t.shortcut) head.appendChild(el('kbd', null, t.shortcut));
     card.appendChild(head);
     if (t.detail) card.appendChild(el('div', 'meta', t.detail));
     const actions = el('div', 'actions');
     const rename = el('button', 'quiet', 'Rename');
-    rename.onclick = async () => {
-      const v = prompt('Tag name', t.name); if (!v) return;
+    rename.onclick = () => promptFor('Tag name', '', async (v) => {
+      if (!v) return;
       const old = t.name; t.name = v; await db.put('tags', t);
       for (const e of state.evidence.filter(e => e.tag === old)) { e.tag = v; await db.put('evidence', e); }
       await refresh();
-    };
+    });
     const recolour = el('button', 'quiet', 'Colour');
-    recolour.onclick = async () => {
-      const v = prompt('Hex colour', t.color); if (!v) return;
+    recolour.onclick = () => promptFor('Hex colour', 'e.g. #4CAF7D', async (v) => {
+      if (!v) return;
       t.color = v; await db.put('tags', t);
       for (const e of state.evidence.filter(e => e.tag === t.name)) { e.color = v; await db.put('evidence', e); }
       await refresh(); drawEvidence();
-    };
+    });
     actions.append(rename, recolour);
     card.appendChild(actions);
     box.appendChild(card);
   }
 }
 
-// ---------------------------------------------------------------- exports
+// ---------------------------------------------------------------- settings
 
-function download(name, text, type = 'text/plain') {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement('a');
-  a.href = url; a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+function renderSettings(root) {
+  root.innerHTML = '';
+  const list = el('div', 'list');
+  list.appendChild(el('h2', null, 'This review'));
 
-function evidenceMarkdown() {
-  let out = `# Highlights\n\n_${state.evidence.length} from ${new Set(state.evidence.map(e => e.sourceId)).size} sources, exported ${new Date().toLocaleDateString()}_\n\n`;
-  const byTag = {};
-  for (const e of state.evidence) (byTag[e.tag || 'Untagged'] ||= []).push(e);
-  for (const [tag, list] of Object.entries(byTag)) {
-    out += `## ${tag}\n\n`;
-    for (const e of list) {
-      const s = state.sources.find(x => x.id === e.sourceId);
-      out += `> ${e.quote}\n>\n> — ${s ? s.title : 'unknown source'}, p.${e.page + 1}\n\n`;
-      if (e.note) out += `${e.note}\n\n`;
-    }
+  const fields = [
+    ['name', 'Name', 'input'],
+    ['question', 'Review question', 'textarea'],
+    ['inclusion', 'Include a paper if…', 'textarea'],
+    ['exclusion', 'Exclude a paper if…', 'textarea'],
+  ];
+  for (const [key, label, kind] of fields) {
+    const f = el('div', 'field');
+    f.appendChild(el('label', null, label));
+    const input = el(kind);
+    if (kind === 'textarea') input.rows = 2;
+    input.value = state.project?.[key] || '';
+    input.onchange = async () => {
+      state.project[key] = input.value;
+      await db.put('projects', state.project);
+      await refresh();
+    };
+    f.appendChild(input);
+    list.appendChild(f);
   }
-  return out;
-}
+  list.appendChild(el('p', 'hint', 'Screening tints your inclusion terms green and exclusion terms red inside each abstract, so the words a decision turns on are visible before you read a line.'));
 
-function evidenceCsv() {
-  const esc = v => `"${String(v ?? '').replace(/"/g, '""').replace(/\n/g, ' ')}"`;
-  const rows = [['Quote', 'Note', 'Tag', 'Page', 'Source', 'Added'].map(esc).join(',')];
-  for (const e of state.evidence) {
-    const s = state.sources.find(x => x.id === e.sourceId);
-    rows.push([e.quote, e.note, e.tag, e.page + 1, s ? s.title : '', e.created].map(esc).join(','));
-  }
-  return rows.join('\n');
+  list.appendChild(el('h3', 'section-label', 'What this version leaves out'));
+  const gaps = el('div', 'card');
+  gaps.appendChild(el('div', 'meta',
+    'Two things the browser genuinely cannot do. It cannot search CORE or arXiv, which send no CORS header, or the four databases that need a paid API key — the ones it can reach are listed under Find papers, and the ones it cannot are named there too. And it has no assistant: running one would mean sending your library to somebody else\u2019s computer. What Sieve derives mechanically instead is recorded in the AI trail.'));
+  gaps.appendChild(el('div', 'meta',
+    'Beyond that the desktop app adds folders and collections, and XLSX and Word export. Everything else — screening, the reader, evidence, the citation map, the matrix, frameworks, PRISMA, methods — is here.'));
+  gaps.style.display = 'grid';
+  gaps.style.gap = '8px';
+  list.appendChild(gaps);
+  root.appendChild(list);
 }
 
 // ---------------------------------------------------------------- wiring
 
 function wire() {
-  for (const b of document.querySelectorAll('.nav')) b.onclick = () => showView(b.dataset.view);
+  for (const b of document.querySelectorAll('.nav')) b.onclick = () => go(b.dataset.view);
   $('#addBtn').onclick = () => $('#fileInput').click();
   $('#fileInput').onchange = (e) => { addFiles([...e.target.files]); e.target.value = ''; };
   $('#filter').oninput = renderLibrary;
   $('#stageFilter').onchange = renderLibrary;
   $('#evFilter').oninput = renderEvidence;
-  $('#zoomIn').onclick = () => reader && reader.setScale(reader.scale + 0.2).then(drawEvidence);
-  $('#zoomOut').onclick = () => reader && reader.setScale(reader.scale - 0.2).then(drawEvidence);
+  $('#zoomIn').onclick = () => reader?.setScale(reader.scale + 0.2).then(afterZoom);
+  $('#zoomOut').onclick = () => reader?.setScale(reader.scale - 0.2).then(afterZoom);
+
+  // The reader's paper list
+  $('#railFilter').onchange = (e) => { state.railFilter = e.target.value; renderRail(); };
+  $('#railSearch').oninput = (e) => { state.railQuery = e.target.value; renderRail(); };
+  $('#railHide').onclick = () => showRail(false);
+  $('#railShow').onclick = () => showRail(true);
+
+  // Find in document
+  let findTimer = null;
+  $('#findText').oninput = () => {
+    clearTimeout(findTimer);
+    findTimer = setTimeout(runFind, 220);
+  };
+  $('#findText').onkeydown = (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (reader?.matches.length) reader.stepMatch(e.shiftKey ? -1 : 1), showFindCount();
+    else runFind();
+  };
+  $('#findPrev').onclick = () => { reader?.stepMatch(-1); showFindCount(); };
+  $('#findNext').onclick = () => { reader?.stepMatch(1); showFindCount(); };
+
+  $('#keysBtn').onclick = () => inspector.shortcutSheet(ctx);
+  $('#thoughtBtn').onclick = () => inspector.thoughtSheet(ctx, {
+    currentPage: () => (reader ? reader.currentPage : 0),
+    saveThought: async (t) => {
+      const ev = {
+        projectId: state.project.id, sourceId: state.openId, page: t.page, rects: [],
+        quote: t.quote, color: t.color, tag: t.tag, note: '', stance: t.stance,
+        created: new Date().toISOString(),
+      };
+      ev.id = await db.put('evidence', ev);
+      state.evidence.push(ev);
+      await refresh();
+      renderInspector();
+      toast(`${STANCES[t.stance].label} recorded`);
+      scheduleSync();
+    },
+  }, STANCES);
+  $('#methodLine').onclick = () => go('method');
   $('#exportEvidence').onclick = () => download('highlights.md', evidenceMarkdown(), 'text/markdown');
   $('#exportCsv').onclick = () => download('highlights.csv', evidenceCsv(), 'text/csv');
+  $('#addTag').onclick = () => promptFor('New tag', 'Name', async (name) => {
+    if (!name) return;
+    await db.put('tags', { projectId: state.project.id, name, color: '#8A93A3', detail: '', shortcut: '' });
+    await refresh();
+  });
+
+  $('#projectPicker').onclick = () => sheet('Reviews', (body, close) => {
+    for (const p of state.projects) {
+      const b = el('button', 'card');
+      b.style.cssText = 'width:100%;text-align:left;margin-bottom:6px;cursor:pointer';
+      b.appendChild(el('h4', null, (p.id === state.project?.id ? '✓ ' : '') + p.name));
+      if (p.question) b.appendChild(el('div', 'meta', p.question));
+      b.onclick = async () => {
+        state.project = p;
+        await db.put('meta', { key: 'currentProject', value: p.id });
+        await refresh(); close(); go('overview');
+      };
+      body.appendChild(b);
+    }
+    const add = el('button', 'primary', 'New review');
+    add.onclick = () => { close(); promptFor('New review', 'Name', async (name) => {
+      if (!name) return;
+      const id = await db.addProject(name);
+      state.projects = await db.all('projects');
+      state.project = state.projects.find(p => p.id === id);
+      await db.put('meta', { key: 'currentProject', value: id });
+      await refresh(); go('settings');
+    }); };
+    body.appendChild(add);
+  });
 
   $('#exportBtn').onclick = async () => {
     toast('Packing your library…');
-    const data = await db.exportAll();
     download(`sieve-backup-${new Date().toISOString().slice(0, 10)}.json`,
-             JSON.stringify(data), 'application/json');
+             JSON.stringify(await db.exportAll()), 'application/json');
     toast('Backed up — that file is your whole library');
   };
   $('#importBtn').onclick = async () => {
     const handle = await store.savedFolder(db).catch(() => null);
-    if (handle && store.folderSupported()) {
-      const useFolder = confirm(`Restore from the folder “${handle.name}”?\n\nCancel to pick a backup file instead.`);
-      if (useFolder) {
-        try {
-          if ((await store.folderPermission(handle)) !== 'granted') await store.reconnectFolder(handle);
-          const { index, files } = await store.readFolder(handle);
-          await db.importAll({ format: 'sieve-web/1', ...index, files: [] });
-          for (const f of files) await db.put('files', f);
-          await refresh(); await showSafety();
-          toast(`Restored ${index.sources.length} sources from ${handle.name}`);
-        } catch (err) { toast('Could not read that folder'); }
-        return;
-      }
+    if (handle && store.folderSupported() &&
+        confirm(`Restore from the folder “${handle.name}”?\n\nCancel to pick a backup file instead.`)) {
+      try {
+        if ((await store.folderPermission(handle)) !== 'granted') await store.reconnectFolder(handle);
+        const { index, files } = await store.readFolder(handle);
+        await db.importAll({ format: 'sieve-web/1', ...index, files: [] });
+        for (const f of files) await db.put('files', f);
+        await refresh(); await showSafety();
+        toast(`Restored ${index.sources.length} sources`);
+      } catch { toast('Could not read that folder'); }
+      return;
     }
     $('#jsonInput').click();
   };
   $('#jsonInput').onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = '';
     if (!f) return;
-    try {
-      await db.importAll(JSON.parse(await f.text()));
-      await refresh(); toast('Restored');
-    } catch (err) { toast('That file is not a Sieve backup'); }
-  };
-  $('#addTag').onclick = async () => {
-    const name = prompt('New tag'); if (!name) return;
-    await db.put('tags', { name, color: '#8A93A3', detail: '', shortcut: '' });
-    await refresh();
+    try { await db.importAll(JSON.parse(await f.text())); await refresh(); toast('Restored'); }
+    catch { toast('That file is not a Sieve backup'); }
   };
 
-  // Number keys highlight, the same as the desktop app.
   document.addEventListener('keydown', (ev) => {
     if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
-    const tag = state.tags.find(t => t.shortcut === ev.key);
-    if (tag && state.selection) { ev.preventDefault(); highlight(tag); }
+    if (!$('#modal').classList.contains('hidden')) return;
+    if (state.view === 'screening') { if (views.screeningKey(ctx, ev.key.toLowerCase())) ev.preventDefault(); return; }
+    if (state.view === 'reader') {
+      const tag = state.tags.find(t => t.shortcut === ev.key);
+      if (tag && state.selection) { ev.preventDefault(); highlight(tag); return; }
+      const k = ev.key.toLowerCase();
+      if (k === 'e') { state.stance = 'evidence'; renderPalette(); }
+      if (k === 'i') { state.stance = 'interpretation'; renderPalette(); }
+      if (k === 'q') { state.stance = 'question'; renderPalette(); }
+      if (k === 'j') { ev.preventDefault(); stepPaper(1); }
+      if (k === 'k') { ev.preventDefault(); stepPaper(-1); }
+      if (ev.key === 'Escape') {
+        window.getSelection().removeAllRanges();
+        state.selection = null;
+        renderPalette();
+      }
+    }
   });
 
-  // Drop anywhere.
   let depth = 0;
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('dragenter', e => { e.preventDefault(); depth++; $('#drop').classList.remove('hidden'); });
@@ -565,13 +957,58 @@ function wire() {
   });
 }
 
+function afterZoom() { drawEvidence(); runFind(); }
+
+function showRail(visible) {
+  state.railHidden = !visible;
+  $('#paperRail').classList.toggle('hidden', !visible);
+  $('#railShow').classList.toggle('hidden', visible);
+}
+
+function runFind() {
+  if (!reader) { $('#findCount').textContent = ''; return; }
+  const n = reader.find($('#findText').value);
+  $('#findCount').textContent = $('#findText').value.trim().length < 2 ? ''
+    : n ? `${reader.matchIndex + 1} / ${n}` : 'none';
+}
+
+function showFindCount() {
+  if (!reader || !reader.matches.length) return;
+  $('#findCount').textContent = `${reader.matchIndex + 1} / ${reader.matches.length}`;
+}
+
+function evidenceMarkdown() {
+  let out = `# ${state.project?.name || 'Review'} — highlights\n\n`;
+  const byTag = {};
+  for (const e of state.evidence) (byTag[e.tag || 'Untagged'] ||= []).push(e);
+  for (const [tag, list] of Object.entries(byTag)) {
+    out += `## ${tag}\n\n`;
+    for (const e of list) {
+      const s = state.sources.find(x => x.id === e.sourceId);
+      out += `> ${e.quote}\n>\n> — ${s ? s.title : 'unknown'}, p.${e.page + 1} · ${STANCES[e.stance]?.label || 'Evidence'}\n\n`;
+      if (e.note) out += `${e.note}\n\n`;
+    }
+  }
+  return out;
+}
+
+function evidenceCsv() {
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""').replace(/\n/g, ' ')}"`;
+  const rows = [['Quote', 'Note', 'Tag', 'Stance', 'Page', 'Source', 'Added'].map(esc).join(',')];
+  for (const e of state.evidence) {
+    const s = state.sources.find(x => x.id === e.sourceId);
+    rows.push([e.quote, e.note, e.tag, e.stance, e.page + 1, s ? s.title : '', e.created].map(esc).join(','));
+  }
+  return rows.join('\n');
+}
+
 let toastTimer = null;
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
   t.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.add('hidden'), 2600);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 2800);
 }
 
 boot();

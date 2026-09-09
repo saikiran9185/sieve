@@ -166,9 +166,11 @@ it as your own starting point.
 
 **<https://saikiran9185.github.io/sieve/>**
 
-One click, nothing to install, and it works on Windows, Linux and iPad as well as a Mac. Drop
-a PDF, read it, highlight it — the reading and highlighting core of the app, running entirely
-in the browser.
+One click, nothing to install, and it works on Windows, Linux and iPad as well as a Mac. It is
+not a demo of the app: it is the workspace. Search seven databases at once, screen with
+recorded reasons, read and highlight in a three-pane reader, extract into the matrix, lay
+evidence into a framework, draw the citation map and produce the PRISMA flow — all of it in
+the browser, all of it on your own machine.
 
 **There is no account and nothing to log in to.** Your sources, highlights and the PDF files
 themselves are stored on your own computer and never uploaded. That is the whole argument of
@@ -182,9 +184,13 @@ PDFs, the highlights as readable JSON, re-synced as you work. The sidebar always
 state you are in. Verified by wiping the entire browser store and restoring from the folder:
 source, highlight and full PDF all returned.
 
-The desktop app is still where the rest lives — the fourteen-database search, PRISMA, the
-matrix, frameworks, the evidence graph, the AI trail. See [web/README.md](web/README.md) for
-exactly what the browser version does and does not do.
+**Two things the browser genuinely cannot do.** It cannot reach CORE or arXiv, which send no
+CORS header, or the four databases behind paid API keys — the seven it can reach are named on
+the search screen, and so are the ones it cannot. And it has no assistant, because running one
+would mean sending your library to somebody else's computer; what Sieve derives mechanically
+instead is logged in the AI trail and adjudicated by you. Beyond that the desktop app adds
+folders and collections, and XLSX and Word export. See [web/README.md](web/README.md) for the
+full account.
 
 ## Install
 
@@ -271,9 +277,9 @@ There is no `.exe`, and there will not be one: of 14,261 lines, only **1,933 (14
 Swift** that would compile anywhere — the other 86% is SwiftUI, AppKit, PDFKit and CoreText,
 including the entire reader.
 
-**The answer is the browser instead.** <https://saikiran9185.github.io/sieve/> runs the
-reading and highlighting core on any platform, using pdf.js where the desktop app uses PDFKit.
-It is not the whole app, and the section above says what it leaves out.
+**The answer is the browser instead.** <https://saikiran9185.github.io/sieve/> runs the whole
+workflow on any platform, using pdf.js where the desktop app uses PDFKit. The section above
+says what it leaves out.
 
 Sieve's reader is built on **PDFKit** and its interface on **SwiftUI** and **AppKit**, all of
 which are Apple frameworks that exist only on macOS. The PDF reader is not a thin layer over

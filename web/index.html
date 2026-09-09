@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sieve</title>
 <meta name="description" content="A provenance-first research workspace. Runs in your browser; your library never leaves it.">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#1c2028">
 <link rel="stylesheet" href="app.css">
@@ -13,14 +14,36 @@
 <div id="app">
   <nav id="sidebar">
     <header>
-      <h1>Sieve</h1>
-      <p id="libraryCount">no sources yet</p>
+      <button id="projectPicker" class="project">
+        <span id="projectName">Review</span>
+        <span id="projectMeta" class="meta"></span>
+      </button>
     </header>
-    <button class="nav" data-view="library" aria-current="true">Library</button>
-    <button class="nav" data-view="reader">Reader</button>
-    <button class="nav" data-view="evidence">Evidence</button>
-    <button class="nav" data-view="tags">Tags</button>
+
+    <div id="navlist">
+      <button class="nav" data-view="overview" aria-current="true">Overview</button>
+      <button class="nav" data-view="find">Find papers</button>
+      <button class="nav" data-view="library">Library</button>
+      <p class="navgroup">Review</p>
+      <button class="nav" data-view="screening">Screening<span class="badge" id="badgeScreening"></span></button>
+      <button class="nav" data-view="reader">Reader</button>
+      <button class="nav" data-view="evidence">Evidence<span class="badge" id="badgeEvidence"></span></button>
+      <button class="nav" data-view="map">Map</button>
+      <button class="nav" data-view="matrix">Matrix</button>
+      <button class="nav" data-view="frames">Frameworks</button>
+      <button class="nav" data-view="prisma">PRISMA</button>
+      <button class="nav" data-view="trail">AI trail<span class="badge" id="badgeTrail"></span></button>
+      <p class="navgroup">Setup</p>
+      <button class="nav" data-view="method">Method</button>
+      <button class="nav" data-view="tags">Tags<span class="badge" id="badgeTags"></span></button>
+      <button class="nav" data-view="settings">Settings</button>
+    </div>
+
     <footer>
+      <button id="methodLine" class="methodline">
+        <span id="methodName">Choose a method</span>
+        <span id="methodStep" class="meta"></span>
+      </button>
       <button id="addBtn" class="primary">Add PDFs</button>
       <div class="row">
         <button id="exportBtn" class="quiet">Back up</button>
@@ -31,70 +54,114 @@
         <button id="folderBtn" class="quiet">Keep a copy in a folder</button>
         <p id="storage" class="hint"></p>
       </div>
-      <p class="hint">
-        Everything is stored on this computer. No account, no server, nothing uploaded.
-      </p>
     </footer>
   </nav>
 
   <main>
-    <section id="library" class="view">
+    <section id="overview" class="view"></section>
+    <section id="find" class="view hidden"></section>
+    <section id="library" class="view hidden">
       <div class="bar">
         <input id="filter" type="search" placeholder="Filter by title or author" aria-label="Filter sources">
+        <select id="stageFilter" aria-label="Filter by stage"><option value="">All stages</option></select>
         <span class="grow"></span>
-        <select id="stageFilter" aria-label="Filter by stage">
-          <option value="">All stages</option>
-          <option value="identified">To screen</option>
-          <option value="included">Included</option>
-          <option value="excluded">Excluded</option>
-        </select>
+        <span id="libraryCount" class="meta"></span>
       </div>
       <div id="sourceList" class="list"></div>
-      <div id="libraryEmpty" class="empty">
-        <h2>Drop PDFs anywhere on this page</h2>
-        <p>They are stored in this browser and never uploaded. Sieve reads each one's abstract,
-           keywords and conclusion out of the file itself — no model, no network.</p>
-      </div>
     </section>
-
+    <section id="screening" class="view hidden"></section>
     <section id="reader" class="view hidden">
-      <div class="bar" id="readerBar">
-        <strong id="readerTitle">No source open</strong>
-        <span class="grow"></span>
-        <div id="palette" class="palette"></div>
-        <button id="zoomOut" class="quiet" aria-label="Zoom out">−</button>
-        <button id="zoomIn" class="quiet" aria-label="Zoom in">+</button>
-      </div>
-      <div id="selectionHint" class="hint bar-sub">Select text, then click a colour or press its number.</div>
-      <div class="split">
-        <div id="pages" class="pages"></div>
-        <aside id="readerSide">
-          <h3>Highlights</h3>
-          <div id="readerEvidence" class="list compact"></div>
+      <div class="reader">
+        <aside id="paperRail" class="rail">
+          <div class="rail-head">
+            <span class="section-label">Papers</span>
+            <button id="railHide" class="icon" title="Hide the paper list" aria-label="Hide the paper list">&#8676;</button>
+          </div>
+          <div class="rail-controls">
+            <select id="railFilter" aria-label="Which papers to list">
+              <option value="included">Included</option>
+              <option value="withPDF">Has PDF</option>
+              <option value="marked">Highlighted</option>
+              <option value="all">All</option>
+            </select>
+            <span id="railCount" class="meta"></span>
+          </div>
+          <input id="railSearch" type="search" placeholder="Find a paper" aria-label="Find a paper">
+          <div id="railList" class="rail-list"></div>
+        </aside>
+
+        <div class="reader-main">
+          <div class="bar" id="readerBar">
+            <button id="railShow" class="icon hidden" title="Show the paper list" aria-label="Show the paper list">&#8677;</button>
+            <span class="titleblock">
+              <strong id="readerTitle">No paper open</strong>
+              <span id="readerByline" class="meta"></span>
+            </span>
+            <span class="grow"></span>
+            <input id="findText" type="search" placeholder="Find in document" aria-label="Find in document">
+            <span id="findCount" class="meta tabular"></span>
+            <button id="findPrev" class="icon" aria-label="Previous match">&#8963;</button>
+            <button id="findNext" class="icon" aria-label="Next match">&#8964;</button>
+            <span class="sep"></span>
+            <button id="zoomOut" class="icon" aria-label="Zoom out">&minus;</button>
+            <button id="zoomIn" class="icon" aria-label="Zoom in">+</button>
+            <span id="pageLabel" class="meta tabular"></span>
+          </div>
+
+          <div class="bar-sub palette-bar">
+            <div class="row-line">
+              <span class="lab">Recording</span>
+              <div id="stances" class="palette"></div>
+              <span id="stanceBlurb" class="hint"></span>
+              <span class="grow"></span>
+              <button id="keysBtn" class="quiet">? keys</button>
+              <button id="thoughtBtn" class="quiet accent">Add a thought</button>
+            </div>
+            <div class="row-line">
+              <span class="lab">as</span>
+              <div id="palette" class="palette"></div>
+              <span class="grow"></span>
+              <span id="selectionHint" class="hint">Select text, then click a colour or press its number.</span>
+            </div>
+          </div>
+
+          <div id="pages" class="pages"></div>
+        </div>
+
+        <aside id="inspector">
+          <div id="inspectorTabs" class="tabs"></div>
+          <div id="inspectorBody" class="inspector-body"></div>
         </aside>
       </div>
     </section>
-
     <section id="evidence" class="view hidden">
       <div class="bar">
         <input id="evFilter" type="search" placeholder="Search your highlights" aria-label="Search highlights">
         <span class="grow"></span>
-        <button id="exportEvidence" class="quiet">Export Markdown</button>
-        <button id="exportCsv" class="quiet">Export CSV</button>
+        <button id="exportEvidence" class="quiet">Markdown</button>
+        <button id="exportCsv" class="quiet">CSV</button>
       </div>
+      <div id="evStances" class="bar-sub"></div>
       <div id="evidenceList" class="list"></div>
     </section>
-
+    <section id="map" class="view hidden"></section>
+    <section id="matrix" class="view hidden"></section>
+    <section id="frames" class="view hidden"></section>
+    <section id="prisma" class="view hidden"></section>
+    <section id="trail" class="view hidden"></section>
+    <section id="method" class="view hidden"></section>
     <section id="tags" class="view hidden">
       <div class="bar"><strong>Tags</strong><span class="grow"></span>
         <button id="addTag" class="quiet">New tag</button></div>
       <div id="tagList" class="list"></div>
     </section>
+    <section id="settings" class="view hidden"></section>
   </main>
 </div>
 
 <div id="drop" class="drop hidden"><div>Drop PDFs to add them</div></div>
 <div id="toast" class="toast hidden"></div>
+<div id="modal" class="modal hidden"><div class="sheet" id="modalBody"></div></div>
 <input id="fileInput" type="file" accept="application/pdf" multiple hidden>
 <input id="jsonInput" type="file" accept="application/json" hidden>
 

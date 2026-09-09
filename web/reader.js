@@ -20,6 +20,11 @@ export class Reader {
     this.onHighlight = null;   // called with { page, rects, quote }
     this.evidence = [];
     this.tagFor = () => null;
+    this.matches = [];         // { page, index } for the find bar
+    this.matchIndex = 0;
+    this.currentPage = 0;
+    this.onPageChange = null;
+    this.observer = null;
   }
 
   async load(blob) {
@@ -76,14 +81,38 @@ export class Reader {
       const textLayer = new pdfjs.TextLayer({ textContentSource: text, container: layer, viewport });
       await textLayer.render();
 
-      this.pages.push({ pageNumber: n, wrapper, marks, viewport });
+      const finds = document.createElement('div');
+      finds.className = 'finds';
+      wrapper.appendChild(finds);
+
+      this.pages.push({ pageNumber: n, wrapper, marks, finds, layer, viewport });
     }
     this.drawAll();
     this.watchSelection();
+    this.watchScroll();
   }
 
-  /// Turns whatever is selected into page-relative fractions. Returns null when the
-  /// selection is empty or spans more than one page — a highlight belongs to one page.
+  /// Which page is in view, so the toolbar can say "3 / 21" the way the desktop app does.
+  watchScroll() {
+    this.observer?.disconnect();
+    this.observer = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const n = Number(e.target.dataset.page) - 1;
+        if (n !== this.currentPage) { this.currentPage = n; this.onPageChange?.(n); }
+      }
+    }, { root: this.container, threshold: 0.5 });
+    for (const p of this.pages) this.observer.observe(p.wrapper);
+  }
+
+  get pageCount() { return this.doc ? this.doc.numPages : 0; }
+
+  /// Turns whatever is selected into page-relative fractions.
+  ///
+  /// A highlight belongs to one page, so a selection dragged past the bottom of one takes the
+  /// page it started on and keeps only the rectangles that land there — the same rule PDFKit
+  /// gives the desktop app for free. Returning nothing in that case is worse than useless: it
+  /// is a drag that silently did not work.
   selectionGeometry() {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return null;
@@ -91,16 +120,22 @@ export class Reader {
     if (quote.length < 2) return null;
 
     const range = sel.getRangeAt(0);
-    let node = range.commonAncestorContainer;
-    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
-    const wrapper = node.closest?.('.page');
+    const pageOf = (node) => {
+      const start = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      return start?.closest?.('.page') || null;
+    };
+    const wrapper = pageOf(range.startContainer) || pageOf(range.commonAncestorContainer);
     if (!wrapper) return null;
 
     const box = wrapper.getBoundingClientRect();
     const rects = [];
     for (const r of range.getClientRects()) {
       if (r.width < 1 || r.height < 1) continue;
-      // Fractions of the page, so a highlight survives zoom and re-render.
+      // Only what falls on the page the selection started on.
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      if (cx < box.left || cx > box.right || cy < box.top || cy > box.bottom) continue;
+      // A rectangle covering most of the page is the container itself, not a line of text.
+      if (r.width > box.width * 0.98 && r.height > box.height * 0.5) continue;
       rects.push({
         x: (r.left - box.left) / box.width,
         y: (r.top - box.top) / box.height,
@@ -146,9 +181,78 @@ export class Reader {
     }
   }
 
+  /// Finds every occurrence of a phrase and boxes them in the text layer.
+  ///
+  /// pdf.js gives no search of its own, so this walks the spans the text layer already laid
+  /// over the glyphs. Matching per span misses a phrase broken across two of them, so the
+  /// page's spans are joined into one string, matched there, and each hit mapped back to the
+  /// span it starts in — which is enough to put a box on it.
+  find(query) {
+    this.clearFind();
+    const q = (query || '').trim().toLowerCase();
+    if (q.length < 2) return 0;
+    for (const p of this.pages) {
+      const spans = [...p.layer.querySelectorAll('span')];
+      let joined = '', offsets = [];
+      for (const sp of spans) {
+        offsets.push({ at: joined.length, span: sp });
+        joined += (sp.textContent || '').toLowerCase();
+      }
+      let from = 0, at;
+      while ((at = joined.indexOf(q, from)) !== -1) {
+        from = at + q.length;
+        let host = offsets[0]?.span;
+        for (const o of offsets) { if (o.at <= at) host = o.span; else break; }
+        if (!host) continue;
+        const box = p.wrapper.getBoundingClientRect();
+        const r = host.getBoundingClientRect();
+        const div = document.createElement('div');
+        div.className = 'find';
+        div.style.left = `${((r.left - box.left) / box.width) * 100}%`;
+        div.style.top = `${((r.top - box.top) / box.height) * 100}%`;
+        div.style.width = `${(r.width / box.width) * 100}%`;
+        div.style.height = `${(r.height / box.height) * 100}%`;
+        p.finds.appendChild(div);
+        this.matches.push(div);
+      }
+    }
+    this.matchIndex = 0;
+    if (this.matches.length) this.showMatch();
+    return this.matches.length;
+  }
+
+  clearFind() {
+    for (const p of this.pages) if (p.finds) p.finds.innerHTML = '';
+    this.matches = [];
+    this.matchIndex = 0;
+  }
+
+  stepMatch(delta) {
+    if (!this.matches.length) return;
+    this.matchIndex = (this.matchIndex + delta + this.matches.length) % this.matches.length;
+    this.showMatch();
+  }
+
+  showMatch() {
+    this.matches.forEach((m, i) => m.classList.toggle('on', i === this.matchIndex));
+    const hit = this.matches[this.matchIndex];
+    if (hit) this.scrollTo(hit, 'center');
+  }
+
   goToPage(index) {
     const p = this.pages[index];
-    if (p) p.wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (p) this.scrollTo(p.wrapper, 'start');
+  }
+
+  /// Scrolls the page column, not the window. `scrollIntoView` walks every scrollable
+  /// ancestor, which in a three-pane layout drags the whole app out of position.
+  scrollTo(node, align = 'center') {
+    const box = node.getBoundingClientRect();
+    const view = this.container.getBoundingClientRect();
+    const offset = align === 'start'
+      ? box.top - view.top - 12
+      : box.top - view.top - (view.height - box.height) / 2;
+    this.container.scrollBy({ top: offset, behavior: 'smooth' });
   }
 
   /// Scrolls to a highlight and flashes it, so clicking one in the list finds it.
@@ -156,7 +260,7 @@ export class Reader {
     const p = this.pages[ev.page];
     if (!p) return;
     const mark = p.marks.querySelector(`[data-evidence="${ev.id}"]`);
-    (mark || p.wrapper).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    this.scrollTo(mark || p.wrapper, mark ? 'center' : 'start');
     if (mark) {
       mark.classList.add('flash');
       setTimeout(() => mark.classList.remove('flash'), 1400);
@@ -165,7 +269,7 @@ export class Reader {
 
   async setScale(scale) {
     this.scale = Math.max(0.5, Math.min(3, scale));
-    if (this.doc) await this.render();
+    if (this.doc) { this.matches = []; await this.render(); }
   }
 
   /// Pulls the abstract and conclusion out of a PDF, the same way the desktop app does —

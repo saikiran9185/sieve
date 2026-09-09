@@ -9,7 +9,7 @@
 // and a backup is a single file you export and keep.
 
 const DB_NAME = 'sieve';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 
 let dbp = null;
 
@@ -38,6 +38,38 @@ export function open() {
       }
       if (!db.objectStoreNames.contains('meta')) {
         db.createObjectStore('meta', { keyPath: 'key' });
+      }
+
+      // v2: a review is a container, the way it is on the desktop. Everything below hangs
+      // off one, so two pieces of work never contaminate each other's PRISMA counts.
+      if (!db.objectStoreNames.contains('projects')) {
+        db.createObjectStore('projects', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('columns')) {
+        db.createObjectStore('columns', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('cells')) {
+        db.createObjectStore('cells', { keyPath: 'key' });           // "paper-column"
+      }
+      if (!db.objectStoreNames.contains('frames')) {
+        db.createObjectStore('frames', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('axes')) {
+        db.createObjectStore('axes', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('frameCells')) {
+        db.createObjectStore('frameCells', { keyPath: 'key' });      // "frame-row-col"
+      }
+      if (!db.objectStoreNames.contains('searchRuns')) {
+        db.createObjectStore('searchRuns', { keyPath: 'id', autoIncrement: true });
+      }
+
+      // v3: the method you are running, and the record of everything a machine wrote.
+      if (!db.objectStoreNames.contains('methods')) {
+        db.createObjectStore('methods', { keyPath: 'id', autoIncrement: true });
+      }
+      if (!db.objectStoreNames.contains('aiEvents')) {
+        db.createObjectStore('aiEvents', { keyPath: 'id', autoIncrement: true });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -75,6 +107,22 @@ export async function byIndex(store, index, value) {
 
 // The categories a highlight can carry. Same defaults as the desktop app, and the colour is
 // the category — that is the whole interaction.
+export const STAGES = {
+  identified:        { label: 'To screen',            color: 'var(--faint)' },
+  duplicate:         { label: 'Duplicate',            color: 'var(--faint)' },
+  excludedScreening: { label: 'Excluded · abstract',  color: 'var(--rose)' },
+  sought:            { label: 'Full text wanted',     color: 'var(--accent)' },
+  notRetrieved:      { label: 'Not retrieved',        color: 'var(--rose)' },
+  excludedFullText:  { label: 'Excluded · full text', color: 'var(--rose)' },
+  included:          { label: 'Included',             color: 'var(--emerald)' },
+};
+
+export const EXCLUSION_REASONS = [
+  'Wrong population', 'Wrong intervention', 'Wrong outcome', 'Wrong study design',
+  'Not peer reviewed', 'Not in English', 'Outside date range', 'Duplicate data',
+  'No full text available', 'Off topic',
+];
+
 export const DEFAULT_TAGS = [
   { name: 'Definition',    color: '#4C8DF2', shortcut: '1', detail: 'How the source defines a key idea.' },
   { name: 'Method',        color: '#9B6BE8', shortcut: '2', detail: 'Design, sample, instrument, procedure.' },
@@ -86,20 +134,164 @@ export const DEFAULT_TAGS = [
   { name: 'Theory',        color: '#3FB8AF', shortcut: '8', detail: 'A frame or model invoked.' },
 ];
 
-export async function seed() {
-  const tags = await all('tags');
-  if (tags.length) return tags;
-  for (const t of DEFAULT_TAGS) await put('tags', t);
-  return all('tags');
+export const DEFAULT_COLUMNS = [
+  ['Research question', 'What does this paper set out to answer?'],
+  ['Method', 'Design, sample size, participants, instruments.'],
+  ['Key findings', "The main results, in the authors' own terms."],
+  ['Limitations', 'What the study cannot claim.'],
+  ['Relevance to me', 'Why this matters for my question.'],
+];
+
+/// One step in a methodology. A method is an ordered list of these, so a researcher can build
+/// the process their discipline actually uses instead of adopting the app's. Same set as the
+/// desktop app, including which screen each step opens.
+export const METHOD_BLOCKS = {
+  search:     { label: 'Search',             view: 'find',      blurb: 'Query databases for candidate sources.' },
+  import:     { label: 'Import',             view: 'library',   blurb: 'Bring in PDFs you already have.' },
+  screen:     { label: 'Screen',             view: 'screening', blurb: 'Decide what is in and what is out, with reasons.' },
+  retrieve:   { label: 'Retrieve full texts',view: 'library',   blurb: 'Get the full texts of what survived screening.' },
+  read:       { label: 'Read',               view: 'reader',    blurb: 'Read the sources properly.' },
+  highlight:  { label: 'Highlight',          view: 'reader',    blurb: 'Mark the passages that matter.' },
+  code:       { label: 'Code',               view: 'reader',    blurb: 'Attach analytic codes to passages.' },
+  tag:        { label: 'Tag',                view: 'tags',      blurb: 'Set up the categories you code with.' },
+  memo:       { label: 'Memo',               view: 'reader',    blurb: 'Write your own thinking alongside the evidence.' },
+  cluster:    { label: 'Cluster',            view: 'frames',    blurb: 'Group observations into themes.' },
+  compare:    { label: 'Compare',            view: 'matrix',    blurb: 'Set findings side by side.' },
+  relate:     { label: 'Relate',             view: 'map',       blurb: 'Link papers that cite the same work.' },
+  vote:       { label: 'Vote',               view: 'screening', blurb: 'Rate or vote on what to include.' },
+  rank:       { label: 'Rank',               view: 'matrix',    blurb: 'Order sources by importance.' },
+  extract:    { label: 'Extract',            view: 'matrix',    blurb: 'Pull structured data into the matrix.' },
+  frame:      { label: 'Frame it',           view: 'frames',    blurb: 'Lay the evidence into a method — SWOT, a journey map, an empathy map.' },
+  synthesize: { label: 'Synthesize',         view: 'evidence',  blurb: 'Build the argument from the evidence.' },
+  validate:   { label: 'Validate',           view: 'evidence',  blurb: 'Check claims against their sources.' },
+  export:     { label: 'Export',             view: 'prisma',    blurb: 'Produce the report, diagram and data files.' },
+};
+
+/// The standard methodologies, shipped as editable recipes. They are templates, not rails:
+/// adopting one copies its steps into the review, where they can be changed freely.
+export const METHOD_PRESETS = [
+  ['Systematic review (PRISMA)',
+   'The full PRISMA 2020 process: a documented search, two-stage screening with recorded reasons, structured extraction and a flow diagram.',
+   ['search','import','screen','retrieve','screen','extract','synthesize','export']],
+  ['Scoping review',
+   'Maps what exists on a topic rather than answering a narrow question. Charting replaces extraction; no risk-of-bias step.',
+   ['search','import','screen','retrieve','extract','cluster','synthesize','export']],
+  ['Literature review',
+   'The ordinary reading-and-writing review: gather, read, code, and build the argument.',
+   ['search','import','read','highlight','code','synthesize','export']],
+  ['Thematic analysis',
+   "Braun & Clarke's six phases: familiarise, code, search for themes, review, define, write up.",
+   ['import','read','highlight','code','cluster','relate','validate','synthesize']],
+  ['Grounded theory',
+   'Open coding, then constant comparison and memoing until categories are saturated.',
+   ['import','read','code','memo','compare','cluster','relate','synthesize']],
+  ['Content analysis',
+   'A fixed coding frame applied consistently, then counted.',
+   ['tag','import','read','code','extract','compare','export']],
+  ['Comparative analysis',
+   'Set cases side by side on the same dimensions and read across them.',
+   ['import','read','extract','compare','rank','synthesize','export']],
+  ['Just reading',
+   'Three steps. Open a paper, mark what matters, write a note.',
+   ['read','highlight','memo']],
+  ['UX research study',
+   'Interviews and sessions rather than papers: collect, read, code what people said, cluster it, and lay it into a journey or empathy map that cites the quotes.',
+   ['import','read','highlight','code','cluster','frame','synthesize','export']],
+  ['Design research — discover',
+   'The front half of a design project: find out what is true before deciding anything. Ends in a framing you can defend.',
+   ['search','import','read','highlight','code','frame','validate','synthesize']],
+  ['Competitive and positioning',
+   'Look at what already exists, compare it on the same dimensions, and work out where the gap is.',
+   ['search','import','read','highlight','compare','frame','synthesize','export']],
+];
+
+/// What a machine wrote, and what the researcher decided about it.
+///
+/// A badge saying "this was generated" is enough to draw a label. It cannot answer the
+/// question a supervisor or a reviewer will actually ask — *which* sentences came from a
+/// machine, and did a human check them against the source? Rows are written once and only
+/// ever edited to record the human's verdict.
+export const TRAIL_KINDS = {
+  extractSection: { label: 'Section pulled out of a PDF', adjudicate: true,
+                    detail: 'Read out of the file by pattern, not by a person.' },
+  labelSDG:       { label: 'Subject labels attached',     adjudicate: true,
+                    detail: "OpenAlex's own classifier, not the authors' words." },
+  mergeRecords:   { label: 'Records folded together',     adjudicate: true,
+                    detail: 'Two database records judged to describe one paper.' },
+  guessTitle:     { label: 'Title guessed from the page', adjudicate: true,
+                    detail: 'Taken from the first plausible line, with no metadata to check it.' },
+  assistant:      { label: 'Assistant suggestion',        adjudicate: true,
+                    detail: 'Restored from a desktop review.' },
+};
+
+export const TRAIL_OUTCOMES = {
+  pending:  { label: 'Not yet checked',        color: 'var(--amber)' },
+  accepted: { label: 'Accepted as given',      color: 'var(--accent)' },
+  edited:   { label: 'Accepted after editing', color: 'var(--emerald)' },
+  rejected: { label: 'Rejected',               color: 'var(--rose)' },
+  unused:   { label: 'Read, not used',         color: 'var(--faint)' },
+};
+
+/// Records one machine-written thing. Never called for anything the researcher typed.
+export async function trail(projectId, kind, sourceId, said, extra = {}) {
+  if (!said) return null;
+  return put('aiEvents', {
+    projectId, kind, sourceId: sourceId || 0, said: String(said).slice(0, 4000),
+    outcome: 'pending', at: new Date().toISOString(), by: 'Sieve on the web (no model)',
+    ...extra,
+  });
 }
 
-/// A whole library as one JSON file. Owning your data means being able to walk away with it.
+/// Sets up a first review and its tags. Everything belongs to a review, including work that
+/// existed before reviews did — that gets adopted rather than orphaned.
+export async function seed() {
+  let projects = await all('projects');
+  if (!projects.length) {
+    const id = await put('projects', {
+      name: 'My first review', question: '', inclusion: '', exclusion: '',
+      created: new Date().toISOString(),
+    });
+    projects = await all('projects');
+    for (const [name, prompt] of DEFAULT_COLUMNS) await put('columns', { projectId: id, name, prompt });
+    // Anything stored before this version had no review; adopt it into the first one.
+    for (const store of ['sources', 'evidence', 'tags']) {
+      for (const row of await all(store)) {
+        if (row.projectId == null) { row.projectId = id; await put(store, row); }
+      }
+    }
+  }
+  const methods = await all('methods');
+  if (!methods.length) {
+    for (const [name, detail, blocks] of METHOD_PRESETS) {
+      await put('methods', { projectId: null, name, detail, blocks, isTemplate: true, step: 0 });
+    }
+  }
+  const tags = await all('tags');
+  if (!tags.length) {
+    for (const t of DEFAULT_TAGS) await put('tags', { ...t, projectId: projects[0].id, kind: 'type' });
+  }
+  return projects;
+}
+
+export async function addProject(name) {
+  const id = await put('projects', {
+    name, question: '', inclusion: '', exclusion: '', created: new Date().toISOString(),
+  });
+  for (const [n, prompt] of DEFAULT_COLUMNS) await put('columns', { projectId: id, name: n, prompt });
+  for (const t of DEFAULT_TAGS) await put('tags', { ...t, projectId: id, kind: 'type' });
+  return id;
+}
+
+/// A whole library as one JSON file. Owning your data means being able to walk away with it,
+/// and that has to mean all of it — the matrix, the frameworks and the method included.
+export const STORES = ['projects', 'sources', 'evidence', 'tags', 'columns', 'cells',
+                       'frames', 'axes', 'frameCells', 'searchRuns', 'methods', 'aiEvents'];
+
 export async function exportAll() {
-  const [sources, evidence, tags, files] = await Promise.all([
-    all('sources'), all('evidence'), all('tags'), all('files')
-  ]);
+  const out = { format: 'sieve-web/1', exported: new Date().toISOString() };
+  for (const name of STORES) out[name] = await all(name);
   const encoded = [];
-  for (const f of files) {
+  for (const f of await all('files')) {
     const buf = await f.blob.arrayBuffer();
     let bin = '';
     const bytes = new Uint8Array(buf);
@@ -109,14 +301,15 @@ export async function exportAll() {
     }
     encoded.push({ sourceId: f.sourceId, name: f.name, base64: btoa(bin) });
   }
-  return { format: 'sieve-web/1', exported: new Date().toISOString(), sources, evidence, tags, files: encoded };
+  out.files = encoded;
+  return out;
 }
 
 export async function importAll(data) {
   if (!data || data.format !== 'sieve-web/1') throw new Error('Not a Sieve export.');
-  for (const t of data.tags || []) await put('tags', t);
-  for (const s of data.sources || []) await put('sources', s);
-  for (const e of data.evidence || []) await put('evidence', e);
+  for (const name of STORES) {
+    for (const row of data[name] || []) await put(name, row);
+  }
   for (const f of data.files || []) {
     const bin = atob(f.base64);
     const bytes = new Uint8Array(bin.length);

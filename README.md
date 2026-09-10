@@ -291,11 +291,39 @@ full account.
 
 ### ⬇︎ [Download Sieve for macOS](https://github.com/saikiran9185/sieve/releases/latest/download/Sieve.dmg)
 
-That link always gives you the newest disk image — it does not need updating when a version
-ships. Open it, drag Sieve into Applications, and read *If you don't use Terminal* below for
-the one-time dialog macOS shows the first time you open it.
+Always the newest disk image, so the link is safe to bookmark or share. Open it and drag
+Sieve into Applications. **macOS 14 or later**, Apple Silicon and Intel.
 
-**macOS 14 or later.** Apple Silicon and Intel.
+> ### ⚠️ macOS will say it "could not verify Sieve is free of malware". It is not malware.
+>
+> **Nothing was scanned, and nothing was found.** That sentence is not a result — it is what
+> macOS says about *every* app that has not been through Apple's paid notarisation service,
+> whatever the app does. It is a statement about a missing receipt, not about the software.
+>
+> Sieve **is** code-signed, with the hardened runtime, under a real Apple developer identity.
+> What it lacks is **notarisation**, which needs a Developer ID Program membership at
+> **$99 a year**. Sieve is free, has no company behind it, and does not earn anything, so
+> that fee has not been paid. That is the entire reason for the dialog.
+>
+> **There is no ill intent here, and nothing hidden.** The way to check that rather than take
+> my word for it:
+>
+> - **The whole source is in this repository.** Every line of what you are installing is
+>   above, and you can build it yourself with `./build_app.sh` — no hidden components, no
+>   bundled binaries.
+> - **Every release publishes a SHA-256** of the exact file. Run
+>   `shasum -a 256 ~/Downloads/Sieve.dmg` and compare it with the release notes; if they
+>   match, the file you have is the file that was built here and nothing tampered with it in
+>   transit.
+> - **Sieve has no account, no server and no telemetry.** It never sends your library
+>   anywhere — the only network requests it makes are the academic database searches you ask
+>   for, to the databases named on the search screen. Everything else is a folder on your own
+>   disk at `~/Documents/Sieve`.
+> - **Nothing needs admin rights**, and nothing is installed outside the app itself.
+>
+> [NOTARISING.md](NOTARISING.md) explains the three signing levels and exactly what it would
+> take to reach the one where nobody sees this dialog at all. **Opening it is a one-time
+> step** — see *If you don't use Terminal* below. Every launch after that is ordinary.
 
 ### One command
 
@@ -313,13 +341,9 @@ Either one downloads the latest release, checks it against the SHA-256 published
 installs it, and clears the download quarantine flag — so macOS opens it instead of claiming
 the app is damaged. There is no `xattr` command to run by hand.
 
-Why that flag needs clearing: the app is signed but **not notarised by Apple**, which requires
-a paid Developer ID ($99/year). macOS refuses to open a quarantined app it cannot check with
-Apple, and says it *could not verify the app is free of malware* — a statement about the
-signature, not a scan result. The checksum published with every release is what protects the
-download instead, and it is verified before the app is installed.
-[NOTARISING.md](NOTARISING.md) explains the three signing levels and how to reach the one
-where nobody sees that dialog.
+Why that flag needs clearing is the notarisation gap described above. Both routes verify the
+published SHA-256 before installing anything, which is the check that actually protects the
+download.
 
 ### If you don't use Terminal
 

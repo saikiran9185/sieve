@@ -198,9 +198,35 @@ Toolbars adapt rather than truncate. Where there is not enough width, a control 
 something whole — the caption, then the labels — instead of clipping every label to a letter
 and an ellipsis.
 
-**Click one of your own highlights in the document** and its card scrolls into view in the
-panel and is marked, so annotating or deleting the passage you are looking at is one click
-from the page itself.
+## The page and the panel point at each other
+
+**Select or click a passage you have already marked** and its card scrolls into view in the
+panel and is outlined in its own colour — the document navigating your notes. Nothing is
+marked when you *make* a highlight: pointing at what you just did is not news.
+
+**Right-click is the way to act on a passage**, in both directions:
+
+- **On the page** — with text selected, mark it as any category, or switch what you are
+  recording. On one of your own highlights: show it in the panel, edit the note, change the
+  category, delete it. The menu is built at the moment you ask for it, so it costs nothing
+  until then.
+- **On a highlight card** — the same panel the `⋯` opens, from anywhere on the card. The
+  `⋯` is still there, and larger, because a control you can see is how you find out the
+  right-click exists.
+
+Double-click a card to open the paper it came from.
+
+## Shortcuts you assign
+
+A tag can be bound to **any digit or letter**, not the first nine digits — a review looks for
+as many kinds of thing as it looks for, and nine was a property of the number row. A tag's
+key only fires while a passage is selected, which is what lets letters be used without taking
+them away from the reader's own keys. The editor says when a key is already spoken for and
+what it would take it from.
+
+Marking a passage tells you **what you marked and what that category is for** — the coding
+rule you wrote so you would apply the tag consistently, shown at the moment you apply it.
+Turn it off in Settings if you would rather mark in silence.
 
 **Your place is kept per paper** — the page, the zoom and the position down the page — and
 restored when you come back to it, whether that is after a glance at another paper or after

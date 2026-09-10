@@ -9,6 +9,9 @@ struct Project: Identifiable, Hashable {
     var question: String = ""
     var inclusionCriteria: String = ""
     var exclusionCriteria: String = ""
+    /// Anything the next person needs: whose review this is, what it is for, what was
+    /// agreed, what is deliberately out of scope. A review outlives the memory of it.
+    var notes: String = ""
     var createdAt: Date = Date()
 }
 
@@ -627,6 +630,24 @@ enum TagKind: String, CaseIterable, Identifiable {
 }
 
 // MARK: - Evidence (a highlight, or a manually typed note)
+
+extension Tag {
+    /// Every key a tag may be bound to, offered in the order a hand reaches for them.
+    ///
+    /// A tag shortcut only fires while text is selected, which is what lets letters be used
+    /// here at all: with nothing selected the same key still means what it always meant.
+    static let assignableShortcuts: [String] =
+        (1...9).map(String.init) + "abcdefghijklmnoprstuvwxyz".map(String.init)
+
+    /// Keys the reader already answers to when nothing is selected. Binding a tag to one of
+    /// these is allowed — it simply wins while a passage is selected — but the tag editor
+    /// says so rather than letting you find out later.
+    static let reservedShortcuts: [String: String] = [
+        "e": "records the next highlight as evidence",
+        "i": "records the next highlight as interpretation",
+        "q": "records the next highlight as a question"
+    ]
+}
 
 struct Evidence: Identifiable, Hashable {
     var id: Int

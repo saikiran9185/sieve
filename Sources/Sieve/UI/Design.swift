@@ -341,3 +341,74 @@ struct PaneDivider: View {
             )
     }
 }
+
+
+/// The width the board was given. A preference rather than a GeometryReader wrapper, so the
+/// board still sizes itself to its content.
+private struct MasonryWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+/// Deals items into the shortest column, so cards of different heights pack instead of
+/// lining up in rows.
+///
+/// `LazyVGrid` sizes every cell in a row to the tallest cell in it. For evidence cards —
+/// which are as long as the passage someone quoted — one four-line quote pushes a band of
+/// empty space across the entire board, which is the wasted half of a view whose whole job
+/// is comparing passages side by side.
+///
+/// Two things this deliberately does not do. It does not use `GeometryReader` to size itself,
+/// because a GeometryReader inside a ScrollView reports the space it was offered and never
+/// the space its content needs, so the board would collapse. And it does not measure the
+/// cards, because measuring means building every one of them — the columns stay `LazyVStack`s
+/// and the packing works from an estimate of how long each passage is. An estimate is enough:
+/// nobody can see that a column is forty points taller than its neighbour, but everybody can
+/// see a hole across the middle of the screen.
+struct MasonryColumns<Item: Identifiable, Content: View>: View {
+    let items: [Item]
+    var minWidth: CGFloat = 290
+    var spacing: CGFloat = 12
+    /// Roughly how tall this item will be, in arbitrary units.
+    var weight: (Item) -> Int = { _ in 6 }
+    @ViewBuilder var content: (Item) -> Content
+
+    @State private var available: CGFloat = 0
+
+    var body: some View {
+        let count = max(1, Int((available + spacing) / (minWidth + spacing)))
+        let buckets = deal(into: count)
+        return HStack(alignment: .top, spacing: spacing) {
+            ForEach(0..<count, id: \.self) { column in
+                LazyVStack(alignment: .leading, spacing: spacing) {
+                    ForEach(buckets[column]) { item in content(item) }
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: MasonryWidthKey.self, value: geo.size.width)
+            }
+        )
+        .onPreferenceChange(MasonryWidthKey.self) { width in
+            // Only react to a real change, or the board republishes on every layout pass.
+            if abs(width - available) > 1 { available = width }
+        }
+    }
+
+    private func deal(into count: Int) -> [[Item]] {
+        var buckets = Array(repeating: [Item](), count: count)
+        var heights = Array(repeating: 0, count: count)
+        for item in items {
+            var shortest = 0
+            for i in 1..<count where heights[i] < heights[shortest] { shortest = i }
+            buckets[shortest].append(item)
+            heights[shortest] += weight(item)
+        }
+        return buckets
+    }
+}

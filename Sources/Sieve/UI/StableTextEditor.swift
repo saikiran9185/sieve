@@ -251,3 +251,37 @@ struct HighlightNoteBox: View {
         store.updateEvidence(e, undoName: "a note", coalesceKey: "note-\(evidence.id)")
     }
 }
+
+/// Catches a right-click without taking anything else.
+///
+/// SwiftUI has no secondary-click gesture, and `contextMenu` builds its items as part of the
+/// view's body — which is exactly the cost that used to freeze the highlight board. This
+/// answers `hitTest` only while a right-click is being dispatched, so ordinary clicks, drags
+/// and text selection pass straight through to the view underneath, and the menu it opens is
+/// built at the moment it is asked for.
+struct RightClickCatcher: NSViewRepresentable {
+    var onRightClick: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let v = Catcher()
+        v.onRightClick = onRightClick
+        return v
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? Catcher)?.onRightClick = onRightClick
+    }
+
+    final class Catcher: NSView {
+        var onRightClick: (() -> Void)?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            switch NSApp.currentEvent?.type {
+            case .rightMouseDown, .rightMouseUp: return self
+            default: return nil
+            }
+        }
+
+        override func rightMouseDown(with event: NSEvent) { onRightClick?() }
+    }
+}

@@ -87,6 +87,7 @@ final class Store: ObservableObject {
                         question: $0.string("question") ?? "",
                         inclusionCriteria: $0.string("inclusion") ?? "",
                         exclusionCriteria: $0.string("exclusion") ?? "",
+                        notes: $0.string("notes") ?? "",
                         createdAt: $0.date("created_at") ?? Date())
             }
         } catch { fail(error, "Loading reviews") }
@@ -161,8 +162,8 @@ final class Store: ObservableObject {
     func updateProject(_ p: Project) {
         let oldName = projects.first { $0.id == p.id }?.name
         do {
-            try db.run("UPDATE projects SET name=?, question=?, inclusion=?, exclusion=? WHERE id=?",
-                       [p.name, p.question, p.inclusionCriteria, p.exclusionCriteria, p.id])
+            try db.run("UPDATE projects SET name=?, question=?, inclusion=?, exclusion=?, notes=? WHERE id=?",
+                       [p.name, p.question, p.inclusionCriteria, p.exclusionCriteria, p.notes, p.id])
             reloadProjects()
             // The folder is named after the review, so renaming one renames the other.
             // Paths are stored relative to the library root, so nothing has to be rewritten.
@@ -645,8 +646,10 @@ final class Store: ObservableObject {
         do {
             let order = (tags.filter { $0.kind == kind }.map(\.sortOrder).max() ?? -1) + 1
             let used = Set(tags.compactMap { $0.shortcut.isEmpty ? nil : $0.shortcut })
+            // Nine tags was never the ceiling on how many kinds of thing a review is looking
+            // for, only on how many digits there are. Letters carry on from there.
             let shortcut = kind == TagKind.type.rawValue
-                ? ((1...9).map(String.init).first { !used.contains($0) } ?? "") : ""
+                ? (Tag.assignableShortcuts.first { !used.contains($0) } ?? "") : ""
             let id = try db.run("INSERT INTO tags (project_id,name,color,kind,detail,sort_order,shortcut) VALUES (?,?,?,?,?,?,?)",
                                 [currentProjectId, name, color, kind, detail, order, shortcut])
             reloadTags()

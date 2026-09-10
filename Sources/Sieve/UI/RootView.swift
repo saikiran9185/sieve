@@ -118,37 +118,43 @@ struct RootView: View {
     @ViewBuilder
     private var peekSidebar: some View {
         HStack(spacing: 0) {
-            if sidebarPeek {
-                Sidebar()
-                    .frame(width: sidebarWidth)
-                    .background(.regularMaterial)
-                    .overlay(alignment: .trailing) {
-                        Rectangle().fill(D.hairline).frame(width: 0.5)
-                    }
-                    .shadow(color: .black.opacity(0.2), radius: 16, x: 4)
-                    .transition(.move(edge: .leading))
-            } else {
-                // The rail is visible enough to say the sidebar is there, thin enough to
-                // cost nothing.
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.14))
-                    .frame(width: 4)
-                    .overlay(alignment: .top) {
-                        Image(systemName: "sidebar.left")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .padding(4)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
-                            .padding(.top, D.s2)
-                            .padding(.leading, 2)
-                            .accessibilityHidden(true)
-                    }
-                    .contentShape(Rectangle().inset(by: -6))
+            // The hover test belongs to the rail and the panel — never to the row that holds
+            // them. Put it on the row and its trailing spacer answers for the whole window,
+            // so the sidebar slid open the moment the pointer entered the app at all.
+            Group {
+                if sidebarPeek {
+                    Sidebar()
+                        .frame(width: sidebarWidth)
+                        .background(D.raised)
+                        .overlay(alignment: .trailing) {
+                            Rectangle().fill(D.hairline).frame(width: 0.5)
+                        }
+                        .shadow(color: .black.opacity(0.28), radius: 18, x: 5)
+                        .transition(.move(edge: .leading))
+                } else {
+                    // Visible enough to say the sidebar is there, thin enough to cost nothing.
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.12))
+                        .frame(width: 4)
+                        .overlay(alignment: .top) {
+                            Image(systemName: "sidebar.left")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .padding(4)
+                                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
+                                .padding(.top, D.s2)
+                                .padding(.leading, 2)
+                                .accessibilityHidden(true)
+                        }
+                        .contentShape(Rectangle())
+                }
             }
-            Spacer(minLength: 0)
-        }
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.16)) { sidebarPeek = hovering }
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.16)) { sidebarPeek = hovering }
+            }
+
+            // Everything to the right of the rail belongs to the screen underneath.
+            Spacer(minLength: 0).allowsHitTesting(false)
         }
     }
 
@@ -607,6 +613,8 @@ struct NewProjectSheet: View {
     @State private var question = ""
     @State private var inclusion = ""
     @State private var exclusion = ""
+    @State private var notes = ""
+    @State private var libraryTick = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: D.s4) {
@@ -624,6 +632,15 @@ struct NewProjectSheet: View {
             Text("Criteria can be edited any time in Settings. They're what the screening view checks against.")
                 .font(.system(size: 10.5)).foregroundStyle(.tertiary)
 
+            field("Notes — for whoever opens this review",
+                  "Whose review this is, what it is for, what was agreed, what is deliberately out of scope. Including you, months later.",
+                  $notes, lines: 3)
+
+            // Where it goes. A review is a folder of real files on a real disk, and being
+            // told which one — before the first paper lands in it — is the difference
+            // between a library you own and a library you have to go looking for.
+            whereItGoes
+
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -631,6 +648,7 @@ struct NewProjectSheet: View {
                     let id = store.createProject(name: name.isEmpty ? "Untitled review" : name)
                     if var p = store.projects.first(where: { $0.id == id }) {
                         p.question = question; p.inclusionCriteria = inclusion; p.exclusionCriteria = exclusion
+                        p.notes = notes
                         store.updateProject(p)
                     }
                     store.switchTo(id)
@@ -642,6 +660,46 @@ struct NewProjectSheet: View {
         }
         .padding(D.s5)
         .frame(width: 640)
+    }
+
+    private var whereItGoes: some View {
+        let folder = Library.root.appendingPathComponent(
+            "Reviews/\(name.isEmpty ? "Untitled review" : name)", isDirectory: true)
+        return VStack(alignment: .leading, spacing: 4) {
+            SectionLabel(text: "Where it will be stored")
+            HStack(spacing: 6) {
+                Image(systemName: "folder").foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    .font(D.mono).lineLimit(2).truncationMode(.middle)
+                    .textSelection(.enabled)
+                    .id(libraryTick)
+                Spacer()
+                Button("Change…") { relocateLibrary() }
+                    .font(D.small)
+                    .help("Move the whole Sieve library — every review, and the PDFs in them")
+            }
+            Text("The PDFs are ordinary files in ordinary folders. Nothing is uploaded, and nothing needs Sieve to be readable.")
+                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+        }
+    }
+
+    /// Changing the location moves the library rather than pointing at a second one: two
+    /// libraries with the same reviews in them is the state nobody can recover from.
+    private func relocateLibrary() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Move library here"
+        panel.message = "Choose a folder to hold the Sieve library"
+        guard panel.runModal() == .OK, let dir = panel.url else { return }
+        do {
+            try LibraryMigration.relocate(to: dir.appendingPathComponent("Sieve", isDirectory: true),
+                                          store: store)
+            libraryTick += 1
+        } catch {
+            store.flash("Could not move the library: \(error.localizedDescription)")
+        }
     }
 
     private func field(_ label: String, _ placeholder: String, _ text: Binding<String>, lines: Int = 1) -> some View {

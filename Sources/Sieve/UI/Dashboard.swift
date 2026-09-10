@@ -303,6 +303,7 @@ struct SettingsView: View {
     @AppStorage(UISettings.noteOnHighlightKey) private var noteOnHighlight = false
     @AppStorage(UISettings.paletteAlwaysKey) private var paletteAlways = true
     @AppStorage(UISettings.dimHighlightsReadingKey) private var dimHighlightsInReading = false
+    @AppStorage(UISettings.explainOnHighlightKey) private var explainOnHighlight = true
 
 
     /// CORE takes an optional key that only raises its rate limit, so it isn't declared
@@ -390,6 +391,8 @@ struct SettingsView: View {
                           "Re-read a passage as the publisher set it rather than as you have already marked it. Your marks are never lost, only not drawn — and ⌃⌘H does the same thing at any time.")
                     check($noteOnHighlight, "Open a note box on the page when I mark a passage",
                           "Off, marking a passage marks it and nothing else; the note is written in the highlights panel beside the passage. On, a box opens over the page straight away.")
+                    check($explainOnHighlight, "Say what I marked, and what that category is for",
+                          "The tag and its coding rule, briefly, as you mark a passage — the rule you wrote so you would apply the tag consistently, shown at the moment you apply it. Off, marking is silent.")
                 }
 
                 if let p = store.project {
@@ -414,6 +417,14 @@ struct SettingsView: View {
                         }
                         Text("Screening checks each record against these, and Claude uses them verbatim when you ask for a recommendation.")
                             .font(D.small).foregroundStyle(.tertiary)
+                        labelled("Notes — for whoever opens this review") {
+                            StableTextEditor(text: binding(\.notes, p),
+                                             placeholder: "Whose review this is, what it is for, what was agreed, what is deliberately out of scope.")
+                                .frame(height: 80)
+                                .background(D.surface)
+                                .clipShape(RoundedRectangle(cornerRadius: D.radius))
+                                .hairlineBorder()
+                        }
                     }
                 }
 

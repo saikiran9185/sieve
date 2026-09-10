@@ -203,15 +203,22 @@ struct EvidenceView: View {
         }
     }
 
-    /// A masonry-ish three-column layout: evidence cards are short and read better
-    /// side by side than in one long ribbon.
+    /// Columns, not a grid.
+    ///
+    /// `LazyVGrid` makes every cell in a row as tall as the tallest one in it, so a single
+    /// long quote left a band of empty space across the whole board — the wasted half of the
+    /// screen in a view whose entire job is comparing passages side by side. Cards are dealt
+    /// into whichever column is currently shortest instead, which is what "masonry" means and
+    /// what the layout was always pretending to be.
     private func columns(_ items: [Evidence]) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300, maximum: 460), spacing: D.s3)],
-                  alignment: .leading, spacing: D.s3) {
-            ForEach(items) { e in
-                EvidenceCard(evidence: e, paper: store.paper(e.paperId), compact: false) {
-                    nav.read(e.paperId)
-                }
+        MasonryColumns(items: items, minWidth: 290, spacing: D.s3,
+                       weight: { e in
+                           // Length of the passage plus its note, in rough lines, plus the
+                           // fixed chrome every card carries.
+                           4 + (e.quote.count + e.note.count) / 42
+                       }) { e in
+            EvidenceCard(evidence: e, paper: store.paper(e.paperId), compact: true) {
+                nav.read(e.paperId)
             }
         }
     }

@@ -120,6 +120,70 @@ struct TagEditor: View {
     @State private var shortcut = ""
     @State private var loaded = false
 
+    private var clash: Tag? {
+        guard !shortcut.isEmpty else { return nil }
+        return store.tags.first { $0.shortcut == shortcut && $0.id != tag?.id }
+    }
+
+    /// Any key, not the first nine digits.
+    ///
+    /// A review looks for as many kinds of thing as it looks for; nine was a property of the
+    /// number row, not of the work. Because a tag shortcut only fires while text is selected,
+    /// letters are free to be used here without taking anything away from the reader's own
+    /// keys — and where one would win over an existing key, it says so instead of letting you
+    /// discover it mid-paper.
+    private var shortcutPicker: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            SectionLabel(text: "Keyboard shortcut")
+            Text("Press this with a passage selected to mark it as \(name.isEmpty ? "this tag" : name). Any digit or letter.")
+                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+
+            FlowRow(spacing: 4) {
+                ForEach(Tag.assignableShortcuts, id: \.self) { key in
+                    let takenBy = store.tags.first { $0.shortcut == key && $0.id != tag?.id }
+                    Button { shortcut = shortcut == key ? "" : key } label: {
+                        Text(key.uppercased())
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(width: 24, height: 24)
+                            .background(shortcut == key ? Palette.accent.opacity(0.25)
+                                        : takenBy != nil ? Color.secondary.opacity(0.05)
+                                        : Color.secondary.opacity(0.12))
+                            .foregroundStyle(shortcut == key ? Palette.accent
+                                             : takenBy != nil ? Color.secondary.opacity(0.45) : .primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                            .overlay(RoundedRectangle(cornerRadius: 5)
+                                .stroke(shortcut == key ? Palette.accent : .clear, lineWidth: 1.2))
+                    }
+                    .buttonStyle(.plain)
+                    .help(takenBy.map { "Used by \($0.name) — picking it here takes it from that tag" }
+                          ?? Tag.reservedShortcuts[key].map { "Free, but this key also \($0)" }
+                          ?? "Free")
+                }
+            }
+
+            if let clash {
+                warning("\(clash.name) already uses \(shortcut.uppercased()). Saving takes the key from it, and \(clash.name) is left without one.",
+                        color: Palette.amber)
+            } else if let what = Tag.reservedShortcuts[shortcut] {
+                warning("\(shortcut.uppercased()) also \(what). With a passage selected this tag wins; with nothing selected the key keeps its usual meaning.",
+                        color: Palette.slate)
+            }
+        }
+    }
+
+    private func warning(_ text: String, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 5) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10)).foregroundStyle(color).accessibilityHidden(true)
+            Text(text).font(.system(size: 10.5)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(color.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+    }
+
     /// SwiftUI's ColorPicker opens the shared NSColorPanel, which is its own window and
     /// does not close with the sheet. It has to be dismissed explicitly.
     private func closePanel() {
@@ -173,33 +237,19 @@ struct TagEditor: View {
                     .textFieldStyle(.roundedBorder).lineLimit(3, reservesSpace: true)
             }
 
-            if kind == TagKind.type.rawValue {
-                VStack(alignment: .leading, spacing: 4) {
-                    SectionLabel(text: "Keyboard shortcut")
-                    HStack(spacing: 6) {
-                        ForEach(1...9, id: \.self) { i in
-                            let s = String(i)
-                            let takenBy = store.tags.first { $0.shortcut == s && $0.id != tag?.id }
-                            Button { shortcut = shortcut == s ? "" : s } label: {
-                                Text(s)
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .frame(width: 26, height: 26)
-                                    .background(shortcut == s ? Palette.accent.opacity(0.2) : Color.secondary.opacity(0.08))
-                                    .foregroundStyle(takenBy != nil ? .tertiary : .primary)
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                            }
-                            .buttonStyle(.plain)
-                            .help(takenBy.map { "Currently used by \($0.name)" } ?? "Free")
-                        }
-                    }
-                }
-            }
+            if kind == TagKind.type.rawValue { shortcutPicker }
 
             HStack {
                 Spacer()
                 Button("Cancel") { closePanel(); done() }.keyboardShortcut(.cancelAction)
                 Button("Save") {
                     closePanel()
+                    // A key belongs to one tag. Whoever had it loses it, rather than both
+                    // answering and the reader picking whichever it found first.
+                    if let clash, var other = store.tag(clash.id) {
+                        other.shortcut = ""
+                        store.updateTag(other, recordUndo: false)
+                    }
                     if var t = tag {
                         t.name = name; t.detail = detail; t.colorHex = colorHex; t.shortcut = shortcut
                         store.updateTag(t)

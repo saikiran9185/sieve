@@ -143,6 +143,119 @@ final class PDFController: ObservableObject {
 
 // MARK: - The PDFView itself
 
+/// A PDFView that answers a right-click with the moves you actually want on a page: mark
+/// this selection as something, or act on the highlight under the pointer.
+///
+/// The menu is assembled in `menu(for:)`, which AppKit calls at the moment of the click, so
+/// none of it exists until it is asked for.
+final class SievePDFView: PDFView {
+    struct Actions {
+        var tags: () -> [Tag] = { [] }
+        var applyTag: (Tag) -> Void = { _ in }
+        var stance: () -> Stance = { .evidence }
+        var setStance: (Stance) -> Void = { _ in }
+        var evidenceAt: (CGPoint) -> Evidence? = { _ in nil }
+        var reveal: (Evidence) -> Void = { _ in }
+        var editNote: (Evidence) -> Void = { _ in }
+        var recategorise: (Evidence, Tag) -> Void = { _, _ in }
+        var delete: (Evidence) -> Void = { _ in }
+    }
+
+    var actions = Actions()
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = NSMenu()
+        let point = convert(event.locationInWindow, from: nil)
+
+        if let e = actions.evidenceAt(point) {
+            menu.addItem(header("Your highlight"))
+            add(menu, "Show it in the panel") { [weak self] in self?.actions.reveal(e) }
+            add(menu, "Edit the note…") { [weak self] in self?.actions.editNote(e) }
+            let change = NSMenu()
+            for tag in actions.tags() {
+                let item = NSMenuItem(title: tag.name, action: #selector(run(_:)), keyEquivalent: "")
+                item.target = self
+                item.image = swatch(tag.color)
+                item.representedObject = Block { [weak self] in self?.actions.recategorise(e, tag) }
+                change.addItem(item)
+            }
+            let changeItem = NSMenuItem(title: "Change category", action: nil, keyEquivalent: "")
+            changeItem.submenu = change
+            menu.addItem(changeItem)
+            menu.addItem(.separator())
+            add(menu, "Delete this highlight") { [weak self] in self?.actions.delete(e) }
+            menu.addItem(.separator())
+        }
+
+        let selected = (currentSelection?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !selected.isEmpty {
+            menu.addItem(header("Mark this selection as"))
+            for tag in actions.tags() {
+                let item = NSMenuItem(title: tag.name, action: #selector(run(_:)),
+                                      keyEquivalent: tag.shortcut.count == 1 ? tag.shortcut : "")
+                item.keyEquivalentModifierMask = []
+                item.target = self
+                item.image = swatch(tag.color)
+                item.representedObject = Block { [weak self] in self?.actions.applyTag(tag) }
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+            menu.addItem(header("Recording"))
+            for st in Stance.allCases {
+                let item = NSMenuItem(title: st.label, action: #selector(run(_:)), keyEquivalent: "")
+                item.target = self
+                item.state = st == actions.stance() ? .on : .off
+                item.representedObject = Block { [weak self] in self?.actions.setStance(st) }
+                menu.addItem(item)
+            }
+            menu.addItem(.separator())
+            let copy = NSMenuItem(title: "Copy", action: #selector(copySelection), keyEquivalent: "")
+            copy.target = self
+            menu.addItem(copy)
+        }
+
+        return menu.numberOfItems > 0 ? menu : super.menu(for: event)
+    }
+
+    private final class Block: NSObject {
+        let run: () -> Void
+        init(_ run: @escaping () -> Void) { self.run = run }
+    }
+
+    private func add(_ menu: NSMenu, _ title: String, _ action: @escaping () -> Void) {
+        let item = NSMenuItem(title: title, action: #selector(run(_:)), keyEquivalent: "")
+        item.target = self
+        item.representedObject = Block(action)
+        menu.addItem(item)
+    }
+
+    private func header(_ title: String) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        return item
+    }
+
+    private func swatch(_ color: Color) -> NSImage {
+        let size = NSSize(width: 11, height: 11)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor(color).setFill()
+        NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 2.5, yRadius: 2.5).fill()
+        image.unlockFocus()
+        return image
+    }
+
+    @objc private func run(_ sender: NSMenuItem) {
+        (sender.representedObject as? Block)?.run()
+    }
+
+    @objc private func copySelection() {
+        guard let text = currentSelection?.string else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
 struct PDFKitView: NSViewRepresentable {
     let url: URL
     let paperId: Int
@@ -151,9 +264,13 @@ struct PDFKitView: NSViewRepresentable {
     /// Reading mode: the page as the publisher set it, with none of your marks on it.
     var hideHighlights: Bool = false
     let onHighlightTapped: (Int) -> Void
+    /// What the page's own context menu can do. Built by the reader, which is the only
+    /// place that knows about tags, stances and the store.
+    var menuActions: SievePDFView.Actions = .init()
 
     func makeNSView(context: Context) -> PDFView {
-        let v = PDFView()
+        let v = SievePDFView()
+        v.actions = menuActions
         // `autoScales` refits the document to the view every time the view is resized. With
         // panes that open, close and slide, that meant reading at 200% and losing it the
         // moment anything beside the document changed width — including the toolbar reflowing
@@ -172,6 +289,9 @@ struct PDFKitView: NSViewRepresentable {
     }
 
     func updateNSView(_ v: PDFView, context: Context) {
+        // The closures capture the current store and tags, so they are refreshed rather
+        // than captured once at creation.
+        (v as? SievePDFView)?.actions = menuActions
         if context.coordinator.loadedURL != url {
             // Leaving a paper files the place you left it, before the next one loads over it.
             context.coordinator.rememberPlace(in: v, controller: controller)
@@ -303,7 +423,33 @@ struct PDFKitView: NSViewRepresentable {
         @objc private func selectionChanged() {
             guard let c = controller, let v = pdfView else { return }
             let s = v.currentSelection?.string ?? ""
-            Task { @MainActor in c.selectionText = s }
+            let hit = evidenceUnderSelection(in: v)
+            Task { @MainActor in
+                c.selectionText = s
+                // Selecting a passage you have already marked points the panel at it. This
+                // is the one thing that should mark a card: the document says which
+                // highlight you mean, so you can get from the page to your note in one move.
+                if let hit { self.onTap?(hit) }
+            }
+        }
+
+        /// The stored highlight under a point in view coordinates, for the context menu.
+        func evidenceId(at viewPoint: CGPoint) -> Int? {
+            guard let v = pdfView, let page = v.page(for: viewPoint, nearest: false) else { return nil }
+            let onPage = v.convert(viewPoint, to: page)
+            guard let hit = page.annotation(at: onPage) else { return nil }
+            return drawn.first(where: { $0.value === hit })?.key
+        }
+
+        /// The stored highlight the current selection lands on, if any.
+        private func evidenceUnderSelection(in v: PDFView) -> Int? {
+            guard let sel = v.currentSelection, let page = sel.pages.first else { return nil }
+            let bounds = sel.bounds(for: page)
+            guard !bounds.isEmpty else { return nil }
+            for (id, annotation) in drawn where annotation.page === page {
+                if annotation.bounds.intersects(bounds) { return id }
+            }
+            return nil
         }
 
         @objc private func pageChanged() {
@@ -528,7 +674,14 @@ struct ReaderScreen: View {
 
     private var mainReader: some View {
         VStack(spacing: 0) {
-            if !nav.focusMode {
+            if nav.focusMode {
+                // One solid row, and the page starts below it. Floating this over the
+                // document put a translucent bar across the first lines of every page —
+                // the two things you were trying to read at once were the control bar and
+                // the sentence underneath it.
+                readingBar
+                Divider()
+            } else {
                 readerToolbar
                 highlightPalette
                 Divider()
@@ -543,7 +696,8 @@ struct ReaderScreen: View {
                                onHighlightTapped: { id in
                                    selectedEvidenceId = id
                                    showInspector = true
-                               })
+                               },
+                               menuActions: pageMenuActions(for: p))
                 } else if let p = paper {
                     missingPDF(p)
                 } else {
@@ -557,7 +711,6 @@ struct ReaderScreen: View {
         // Everything below is drawn over the document rather than above it in a stack.
         // A control that appears must never resize the page — that resize is what used to
         // throw away the zoom and the scroll position at the exact moment you marked something.
-        .overlay(alignment: .top) { if nav.focusMode { focusStrip } }
         // Outside reading mode the colours are already on the bar above, so the floating
         // copy is only worth showing while something is selected.
         .overlay(alignment: .top) {
@@ -569,27 +722,21 @@ struct ReaderScreen: View {
 
     /// The only chrome reading mode keeps: a thin bar that says where you are and how to get
     /// the workspace back. It fades to almost nothing until the pointer is near it.
-    private var focusStrip: some View {
-        VStack(spacing: 4) {
+    /// Reading mode's whole interface: one slim, solid row. The colours sit on it beside the
+    /// controls rather than on a second line, because the row you remove from the chrome is
+    /// a row you give to the page.
+    private var readingBar: some View {
+        HStack(spacing: D.s2) {
             focusControls
-            // The colours stay on screen in reading mode rather than appearing only once
-            // you have selected something. They are the reminder of what you are reading
-            // *for* — the categories you are hunting — and that reminder is worth more than
-            // the strip of page it covers.
             if UISettings.paletteAlways || controller.hasSelection {
+                Divider().frame(height: 14)
                 readingColours
             }
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, D.s3).padding(.vertical, 5)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
-            .stroke(D.hairline, lineWidth: 0.5))
-        .padding(.top, D.s2)
-        // Legible at rest, full strength when you reach for it.
-        .opacity(stripHovered || controller.hasSelection ? 1 : 0.55)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) { stripHovered = hovering }
-        }
+        .frame(height: 34)
+        .background(D.surface)
     }
 
     /// The colours, sized to whatever room the window actually has. They used to be laid out
@@ -600,6 +747,7 @@ struct ReaderScreen: View {
             colourButtons(showName: true, showShortcut: true)
             colourButtons(showName: true, showShortcut: false)
             colourButtons(showName: false, showShortcut: true)
+            colourButtons(showName: false, showShortcut: false)
         }
     }
 
@@ -964,6 +1112,54 @@ struct ReaderScreen: View {
         }
     }
 
+    /// What right-clicking the page can do.
+    ///
+    /// The same moves as the colour bar and the highlight card, at the point of the passage.
+    /// A menu is the right shape for this: it costs no space until it is asked for, it can
+    /// hold every category without crowding, and secondary-click is where a reader already
+    /// looks for "do something to this".
+    private func pageMenuActions(for p: Paper) -> SievePDFView.Actions {
+        var a = SievePDFView.Actions()
+        a.tags = { store.categoryTags }
+        a.applyTag = { tag in activeTagId = tag.id; highlight(with: tag) }
+        a.stance = { stance }
+        a.setStance = { stance = $0 }
+        a.evidenceAt = { point in evidenceOnPage(at: point, paper: p) }
+        a.reveal = { e in
+            selectedEvidenceId = e.id
+            showInspector = true
+        }
+        a.editNote = { e in
+            selectedEvidenceId = e.id
+            showInspector = true
+            withAnimation(.easeOut(duration: 0.15)) { noteTarget = e }
+        }
+        a.recategorise = { e, tag in
+            var updated = e
+            updated.tagIds = [tag.id]
+            updated.colorHex = tag.colorHex
+            store.updateEvidence(updated, undoName: "a category change")
+        }
+        a.delete = { e in
+            store.deleteEvidence(e.id)
+            store.flash("Highlight removed — ⌘Z brings it back")
+        }
+        return a
+    }
+
+    /// Which stored highlight sits under a point in the view, by its own rectangles rather
+    /// than by asking PDFKit about annotations — the same answer, without depending on the
+    /// annotations being drawn at all.
+    private func evidenceOnPage(at viewPoint: CGPoint, paper p: Paper) -> Evidence? {
+        guard let v = controller.view, let doc = v.document,
+              let page = v.page(for: viewPoint, nearest: false) else { return nil }
+        let index = doc.index(for: page)
+        let onPage = v.convert(viewPoint, to: page)
+        return store.evidence(forPaper: p.id).first { e in
+            e.page == index && e.rects.contains { $0.insetBy(dx: -2, dy: -2).contains(onPage) }
+        }
+    }
+
     /// Turns the live text selection into a stored piece of evidence.
     private func highlight(with tag: Tag) {
         guard let p = paper else { return }
@@ -979,13 +1175,22 @@ struct ReaderScreen: View {
                                    kind: kindFor(tag), stance: stance)
         controller.clearSelection()
         if let place { controller.restore(place) }
-        store.flash("Saved as \(stance.label.lowercased()) · \(tag.name) · p.\(geo.page + 1) — ⌘Z undoes it")
+        // What you marked and what that category is for. You know ⌘Z undoes things; being
+        // told so on every highlight, hundreds of times a paper, is noise. The coding rule
+        // is the useful half — it is the thing you wrote down so you would apply the tag
+        // consistently, and the moment you apply it is the moment to be reminded of it.
+        if UISettings.explainOnHighlight {
+            let rule = tag.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+            store.flash("\(tag.name) · p.\(geo.page + 1)\(rule.isEmpty ? "" : " — \(rule)")")
+        }
         // Marking a passage marks it, and that is all. Opening a note box on every mark made
         // one keystroke into two steps, and most of the second step was dismissing it. The
         // note is written in the highlights panel, where the passage is already listed —
         // or here, if you have asked for that in Settings.
         guard let e = store.evidence(id) else { return }
-        selectedEvidenceId = e.id
+        // Deliberately NOT marked in the panel. Marking follows the document: it means
+        // "this is the passage you are pointing at", and pointing at what you just made is
+        // not news. The panel is newest-first, so it is already at the top.
         if UISettings.noteOnHighlight {
             withAnimation(.easeOut(duration: 0.15)) { noteTarget = e }
         }
@@ -1053,20 +1258,22 @@ struct ReaderScreen: View {
                 return nil
             }
 
+            // A tag's key only means the tag while there is a passage to apply it to. That
+            // is what lets a tag be bound to a letter without taking the letter away from
+            // the reader: with nothing selected, every key still means what it always meant.
+            let key = chars.lowercased()
+            if chars.count == 1, controller.selectionGeometry() != nil,
+               let tag = store.categoryTags.first(where: { $0.shortcut == key }) {
+                highlight(with: tag)
+                return nil
+            }
+
             // Switch what the next highlight records, without reaching for the mouse.
-            switch chars.lowercased() {
+            switch key {
             case "e": stance = .evidence; return nil
             case "i": stance = .interpretation; return nil
             case "q": stance = .question; return nil
             default: break
-            }
-
-            guard chars.count == 1, let digit = Int(chars), (1...9).contains(digit) else { return event }
-            // Only steal a digit when there is actually a selection to act on.
-            guard controller.selectionGeometry() != nil else { return event }
-            if let tag = store.categoryTags.first(where: { $0.shortcut == String(digit) }) {
-                highlight(with: tag)
-                return nil
             }
             return event
         }

@@ -12,6 +12,7 @@ enum UISettings {
     static let noteOnHighlightKey = "sieve.noteOnHighlight"
     static let paletteAlwaysKey = "sieve.paletteAlways"
     static let dimHighlightsReadingKey = "sieve.dimHighlightsInReading"
+    static let explainOnHighlightKey = "sieve.explainOnHighlight"
 
     /// Defaults are registered rather than assumed, so a key that has never been written
     /// still answers correctly — `bool(forKey:)` returning false is not the same as "off".
@@ -25,7 +26,10 @@ enum UISettings {
             // The colours are a reminder of what you are reading for, so they stay on screen
             // rather than appearing only once you have already found something.
             paletteAlwaysKey: true,
-            dimHighlightsReadingKey: false
+            dimHighlightsReadingKey: false,
+            // What you marked and what that category means. Silence is the alternative,
+            // not a reminder about undo.
+            explainOnHighlightKey: true
         ])
     }
 
@@ -34,4 +38,5 @@ enum UISettings {
     static var noteOnHighlight: Bool { UserDefaults.standard.bool(forKey: noteOnHighlightKey) }
     static var paletteAlways: Bool { UserDefaults.standard.bool(forKey: paletteAlwaysKey) }
     static var dimHighlightsInReading: Bool { UserDefaults.standard.bool(forKey: dimHighlightsReadingKey) }
+    static var explainOnHighlight: Bool { UserDefaults.standard.bool(forKey: explainOnHighlightKey) }
 }

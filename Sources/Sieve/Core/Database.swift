@@ -257,6 +257,8 @@ enum Schema {
             ("folders", "rule", "TEXT NOT NULL DEFAULT ''"),
             ("folders", "icon", "TEXT NOT NULL DEFAULT ''"),
             ("papers", "file_hash", "TEXT NOT NULL DEFAULT ''"),
+            // What this review is, for whoever opens it — including you, months later.
+            ("projects", "notes", "TEXT NOT NULL DEFAULT ''"),
         ]
         for (table, column, type) in later {
             try? db.execute("ALTER TABLE \(table) ADD COLUMN \(column) \(type);")

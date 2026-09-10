@@ -369,7 +369,10 @@ struct EvidenceCard: View {
                     if let onNote { onNote() } else { editing.toggle() }
                 } label: {
                     Image(systemName: evidence.note.isEmpty ? "text.bubble" : "text.bubble.fill")
-                        .font(.system(size: 10)).accessibilityHidden(true)
+                        .font(.system(size: 12))
+                        .frame(width: 20, height: 18)
+                        .contentShape(Rectangle())
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(evidence.note.isEmpty ? Color.secondary.opacity(0.55) : Palette.accent)
@@ -380,7 +383,11 @@ struct EvidenceCard: View {
                     store.deleteEvidence(evidence.id)
                     store.flash("Highlight removed — ⌘Z brings it back")
                 } label: {
-                    Image(systemName: "trash").font(.system(size: 10)).accessibilityHidden(true)
+                    Image(systemName: "trash")
+                        .font(.system(size: 12))
+                        .frame(width: 20, height: 18)
+                        .contentShape(Rectangle())
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Color.secondary.opacity(0.55))
@@ -396,22 +403,31 @@ struct EvidenceCard: View {
                 // and resolving their accessibility text for menus nobody had opened. Popover
                 // content is only built when it is actually shown.
                 Button { showActions = true } label: {
-                    Image(systemName: "ellipsis").font(.system(size: 10)).accessibilityHidden(true)
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(width: 22, height: 18)
+                        .contentShape(Rectangle())
+                        .accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color.secondary.opacity(0.55))
+                .foregroundStyle(Color.secondary.opacity(0.7))
                 .accessibilityLabel("More actions")
+                .help("Everything you can do to this highlight — or right-click the card")
                 .popover(isPresented: $showActions, arrowEdge: .bottom) { actions }
             }
 
-            Text(evidence.quote)
-                .font(D.serif)
-                .lineLimit(compact ? 6 : nil)
-                .textSelection(.enabled)
-                .padding(.leading, D.s2)
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(Color(hex: evidence.colorHex)).frame(width: 3)
-                }
+            // While you are editing, the quote *is* the field. Showing it above the editor as
+            // well meant the same paragraph twice in a panel that is already narrow.
+            if !editing {
+                Text(evidence.quote)
+                    .font(D.serif)
+                    .lineLimit(compact ? 6 : nil)
+                    .textSelection(.enabled)
+                    .padding(.leading, D.s2)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(Color(hex: evidence.colorHex)).frame(width: 3)
+                    }
+            }
 
             if editing {
                 // Editing happens in place. A popover had to copy the quote and the note into
@@ -496,6 +512,7 @@ struct EvidenceCard: View {
                     lineWidth: highlighted ? 1.4 : 0.5))
         .contentShape(Rectangle())
         .onTapGesture(count: 2) { if let onJump { onJump() } }
+        .overlay(RightClickCatcher { showActions = true })
         .sheet(isPresented: $relating) {
             RelationEditor(from: evidence) { relating = false }
         }

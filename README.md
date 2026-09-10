@@ -289,6 +289,12 @@ full account.
 
 ## Install
 
+### ⬇︎ [Download Sieve for macOS](https://github.com/saikiran9185/sieve/releases/latest/download/Sieve.dmg)
+
+That link always gives you the newest disk image — it does not need updating when a version
+ships. Open it, drag Sieve into Applications, and read *If you don't use Terminal* below for
+the one-time dialog macOS shows the first time you open it.
+
 **macOS 14 or later.** Apple Silicon and Intel.
 
 ### One command
@@ -317,8 +323,8 @@ where nobody sees that dialog.
 
 ### If you don't use Terminal
 
-Download `Sieve-x.y.dmg` from the [latest release](../../releases/latest), drag Sieve into
-Applications, and open it. macOS will refuse the first time and say it *"could not verify
+Use the download link above — or take `Sieve-x.y.dmg` from the
+[latest release](../../releases/latest). Drag Sieve into Applications and open it. macOS will refuse the first time and say it *"could not verify
 Sieve is free of malware"* — that is not a malware finding, it is what macOS says about any
 app that has not been through Apple's paid notarisation service. Then:
 

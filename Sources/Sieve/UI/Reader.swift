@@ -611,7 +611,7 @@ struct ReaderScreen: View {
                 paperRail.frame(width: railWidth)
                 PaneDivider(width: $railWidth, range: 180...400)
             }
-            mainReader.frame(width: documentWidth)
+            mainReader(width: documentWidth).frame(width: documentWidth)
             if inspectorVisible(available) {
                 PaneDivider(width: $inspectorWidth, range: 260...540, sizesTrailingPane: true)
                 InspectorPanel(paper: paper, controller: controller,
@@ -731,7 +731,7 @@ struct ReaderScreen: View {
 
     // MARK: Centre — the document
 
-    private var mainReader: some View {
+    private func mainReader(width: CGFloat) -> some View {
         // `.leading`, not the default centre: if anything in here ever does exceed the pane,
         // it should run off the edge it belongs to rather than out of both sides at once.
         VStack(alignment: .leading, spacing: 0) {
@@ -743,8 +743,8 @@ struct ReaderScreen: View {
                 readingBar
                 Divider()
             } else {
-                readerToolbar
-                highlightPalette
+                readerToolbar(width)
+                highlightPalette(width)
                 Divider()
             }
             Group {
@@ -991,8 +991,30 @@ struct ReaderScreen: View {
         } catch { store.flash("Could not copy that file") }
     }
 
-    private var readerToolbar: some View {
-        Toolbar {
+    /// How much of the reader's chrome the column can carry.
+    ///
+    /// Clipping a toolbar is not adapting to a narrow column, it is losing the controls: at
+    /// 400 points "Add a thought", reading mode, the panel toggle, the page number and every
+    /// colour's name were simply cut off the end, with nothing to say they existed. Controls
+    /// are demoted into an overflow menu instead, so a narrower column costs a click rather
+    /// than a capability.
+    enum ChromeTier {
+        case full      // everything, labelled
+        case reduced   // labels and the least-used controls give way
+        case minimal   // identity, zoom, and a menu holding the rest
+
+        init(width: CGFloat) {
+            switch width {
+            case ..<560: self = .minimal
+            case ..<760: self = .reduced
+            default: self = .full
+            }
+        }
+    }
+
+    private func readerToolbar(_ width: CGFloat) -> some View {
+        let tier = ChromeTier(width: width)
+        return Toolbar {
             if !showPaperList {
                 Button { showPaperList = true } label: {
                     Image(systemName: "sidebar.left").accessibilityHidden(true)
@@ -1001,14 +1023,22 @@ struct ReaderScreen: View {
                 .accessibilityLabel("Show the paper list")
                 .help("Show the paper list — it stays hidden while the window is too narrow for it")
             }
+            // The title is what the column is for, so it keeps the space and gives up the
+            // byline first rather than competing with the controls.
             VStack(alignment: .leading, spacing: 0) {
                 Text(paper?.title ?? "No paper").font(D.body.weight(.medium)).lineLimit(1)
-                Text(paper.map { "\($0.authorLine) · \($0.year.map(String.init) ?? "n.d.")" } ?? "")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                if tier == .full, let p = paper {
+                    Text("\(p.authorLine) · \(p.year.map(String.init) ?? "n.d.")")
+                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
-            Spacer()
-            SearchField(placeholder: "Find in document", text: $findText) { controller.find(findText) }
-                .frame(width: D.dense ? 140 : 190)
+            .layoutPriority(1)
+            Spacer(minLength: D.s2)
+            if tier != .minimal {
+                SearchField(placeholder: tier == .full ? "Find in document" : "Find",
+                            text: $findText) { controller.find(findText) }
+                    .frame(width: tier == .full ? 190 : 120)
+            }
             if !controller.searchMatches.isEmpty {
                 Text("\(controller.searchIndex + 1)/\(controller.searchMatches.count)")
                     .font(D.small.monospacedDigit()).foregroundStyle(.secondary)
@@ -1017,13 +1047,16 @@ struct ReaderScreen: View {
                 Button { controller.stepMatch(1) } label: { Image(systemName: "chevron.down") }.buttonStyle(.plain)
                     .accessibilityLabel("Next match")
             }
-            Divider().frame(height: 16)
-            UndoRedoButtons(history: store.history, store: store)
+            if tier == .full {
+                Divider().frame(height: 16)
+                UndoRedoButtons(history: store.history, store: store)
+            }
             Divider().frame(height: 16)
             Button { controller.zoomStep(1 / 1.15) } label: {
                 Image(systemName: "minus.magnifyingglass").accessibilityHidden(true)
             }
             .buttonStyle(.plain).help("Zoom out (⌘−)")
+            .accessibilityLabel("Zoom out")
             Button { controller.fitWidth() } label: {
                 Text("\(Int(controller.zoom * 100))%")
                     .font(D.small.monospacedDigit()).foregroundStyle(.secondary)
@@ -1034,7 +1067,8 @@ struct ReaderScreen: View {
                 Image(systemName: "plus.magnifyingglass").accessibilityHidden(true)
             }
             .buttonStyle(.plain).help("Zoom in (⌘+)")
-            if !controller.pageLabel.isEmpty {
+            .accessibilityLabel("Zoom in")
+            if tier == .full, !controller.pageLabel.isEmpty {
                 Text(controller.pageLabel).font(D.small.monospacedDigit()).foregroundStyle(.secondary)
             }
             Divider().frame(height: 16)
@@ -1043,28 +1077,72 @@ struct ReaderScreen: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(nav.hideHighlights ? Palette.accent : Color.primary)
+            .accessibilityLabel(nav.hideHighlights ? "Show your highlights" : "Hide your highlights")
             .help(nav.hideHighlights ? "Show your highlights (⌃⌘H)" : "Hide your highlights (⌃⌘H)")
-            Button { nav.focusMode = true } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right").accessibilityHidden(true)
+
+            if tier == .full {
+                Button { nav.focusMode = true } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right").accessibilityHidden(true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Reading mode")
+                .help("Reading mode — hide every panel and give the page the window (⌃⌘F)")
+                Button { showInspector.toggle() } label: {
+                    Image(systemName: "sidebar.right").accessibilityHidden(true)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(showInspector ? Color.primary : Color.secondary)
+                .accessibilityLabel(showInspector ? "Hide the highlights panel" : "Show the highlights panel")
+                .help(showInspector ? "Hide the highlights panel" : "Show the highlights panel")
+            } else {
+                overflowMenu(tier)
             }
-            .buttonStyle(.plain)
-            .help("Reading mode — hide every panel and give the page the window (⌃⌘F)")
-            Button { showInspector.toggle() } label: {
-                Image(systemName: "sidebar.right").accessibilityHidden(true)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(showInspector ? Color.primary : Color.secondary)
-            .accessibilityLabel(showInspector ? "Hide the highlights panel" : "Show the highlights panel")
-            .help(showInspector
-                  ? "Hide the highlights panel"
-                  : "Show the highlights panel — it stays hidden while the window is too narrow")
         }
+    }
+
+    /// Everything the column was too narrow to show, still reachable. Built only when
+    /// opened, so a menu nobody uses costs nothing to lay out.
+    private func overflowMenu(_ tier: ChromeTier) -> some View {
+        Menu {
+            Button(store.history.canUndo ? "Undo \(store.history.past.last?.name ?? "")" : "Undo") {
+                _ = store.history.undo()
+            }
+            .disabled(!store.history.canUndo)
+            Button("Redo") { _ = store.history.redo() }
+                .disabled(!store.history.canRedo)
+            Divider()
+            if !controller.pageLabel.isEmpty {
+                Text("Page \(controller.pageLabel)")
+            }
+            Button("Fit the width") { controller.fitWidth() }
+            Divider()
+            Button(nav.hideHighlights ? "Show my highlights" : "Hide my highlights") {
+                nav.hideHighlights.toggle()
+            }
+            Button("Reading mode") { nav.focusMode = true }
+            Button(showInspector ? "Hide the highlights panel" : "Show the highlights panel") {
+                showInspector.toggle()
+            }
+            Button(showPaperList ? "Hide the paper list" : "Show the paper list") {
+                showPaperList.toggle()
+            }
+            Divider()
+            Button("Add a thought…") { showThought = true }
+            Button("Keyboard shortcuts") { showShortcuts = true }
+        } label: {
+            Image(systemName: "ellipsis.circle").accessibilityHidden(true)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 30)
+        .accessibilityLabel("More reader controls")
+        .help("Controls the column is too narrow to show")
     }
 
     // MARK: The colour palette — the heart of the tool
 
-    private var highlightPalette: some View {
-        VStack(alignment: .leading, spacing: 5) {
+    private func highlightPalette(_ width: CGFloat) -> some View {
+        let tier = ChromeTier(width: width)
+        return VStack(alignment: .leading, spacing: 5) {
             // The stance switch sits above the colours because it changes what the colour
             // MEANS: the same passage marked as interpretation is your thinking, not the
             // source's words, and the app must never let those blur together.
@@ -1078,24 +1156,35 @@ struct ReaderScreen: View {
                     stanceRow(prefix: false, labels: true, blurb: false)
                     stanceRow(prefix: false, labels: false, blurb: false)
                 }
-                Spacer()
-                Button { showShortcuts = true } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "keyboard").font(.system(size: 9))
-                        Text("? keys").font(.system(size: 10))
+                Spacer(minLength: D.s2)
+                // Both of these are in the overflow menu once the column is narrow, so
+                // losing them here costs a click rather than the action.
+                if tier == .full {
+                    Button { showShortcuts = true } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "keyboard").font(.system(size: 9))
+                                .accessibilityHidden(true)
+                            Text("? keys").font(.system(size: 10))
+                        }
                     }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help("Keyboard shortcuts")
                 }
-                .buttonStyle(.plain).foregroundStyle(.secondary)
-                .help("Keyboard shortcuts")
-                Button { showThought = true } label: {
-                    Label("Add a thought", systemImage: "plus.bubble")
-                        .font(D.small)
+                if tier != .minimal {
+                    Button { showThought = true } label: {
+                        if tier == .full {
+                            Label("Add a thought", systemImage: "plus.bubble").font(D.small)
+                        } else {
+                            Image(systemName: "plus.bubble").accessibilityHidden(true)
+                        }
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Palette.accent)
+                    .accessibilityLabel("Add a thought")
+                    .help("Record an interpretation or a question that isn't tied to a passage")
                 }
-                .buttonStyle(.plain).foregroundStyle(Palette.accent)
-                .help("Record an interpretation or a question that isn't tied to a passage")
             }
 
-            colourStrip
+            colourStrip(tier)
         }
         .padding(.horizontal, D.s4).padding(.vertical, D.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1135,26 +1224,33 @@ struct ReaderScreen: View {
         }
     }
 
-    private var colourStrip: some View {
+    private func colourStrip(_ tier: ChromeTier) -> some View {
         HStack(spacing: D.s2) {
+            // The colours are the reason this bar exists, so they are the last thing to
+            // give anything up — and they never give up their number, which is how you
+            // reach them without the mouse.
             ViewThatFits(in: .horizontal) {
                 readerColours(prefix: true, showName: true, showShortcut: true)
                 readerColours(prefix: false, showName: true, showShortcut: true)
                 readerColours(prefix: false, showName: true, showShortcut: false)
                 readerColours(prefix: false, showName: false, showShortcut: true)
             }
-            Spacer()
+            Spacer(minLength: D.s2)
             // Fixed width and one line, always. This label used to grow and shrink with the
             // selection, changing the height of the bar and so the height of the document
             // view under it — which refitted the page and lost the zoom every time you
             // selected a passage to mark.
-            Text(controller.hasSelection
-                 ? "\(controller.selectionText.split(separator: " ").count) words selected"
-                 : "Select text, then click a colour or press its number")
-                .font(D.small)
-                .foregroundStyle(controller.hasSelection ? Palette.accent : Color.secondary.opacity(0.7))
-                .lineLimit(1)
-                .frame(width: D.dense ? 150 : 260, alignment: .trailing)
+            // Pure instruction, so it is the first thing to go — but the selection count
+            // is feedback on what you are about to do, and that survives a tier longer.
+            if tier == .full || (tier == .reduced && controller.hasSelection) {
+                Text(controller.hasSelection
+                     ? "\(controller.selectionText.split(separator: " ").count) words selected"
+                     : "Select text, then click a colour or press its number")
+                    .font(D.small)
+                    .foregroundStyle(controller.hasSelection ? Palette.accent : Color.secondary.opacity(0.7))
+                    .lineLimit(1)
+                    .frame(width: tier == .full ? (D.dense ? 150 : 260) : 110, alignment: .trailing)
+            }
         }
         .frame(height: 22)
     }

@@ -15,17 +15,18 @@ struct RootView: View {
     // screen you happened to be looking at; `D` reads the same value.
     @AppStorage(UISettings.compactKey) private var compact: Bool = false
     @State private var sidebarPeek = false
-    @Environment(\.layoutClass) private var layout
 
     var body: some View {
-        // The window's own width, measured once at the root and handed down, so every screen
-        // can decide what to stand down rather than each one guessing.
+        // Two measurements, because they answer different questions. The window's width
+        // decides whether the sidebar can afford to take a column of its own; the width
+        // left *after* the sidebar is what each screen actually has to lay out in, and
+        // that is the number `layoutClass` carries.
         GeometryReader { geo in
-            workspace.environment(\.layoutClass, LayoutClass(width: geo.size.width))
+            workspace(windowWidth: geo.size.width)
         }
     }
 
-    private var workspace: some View {
+    private func workspace(windowWidth: CGFloat) -> some View {
         // A plain HStack, not NavigationSplitView.
         //
         // On macOS 26 the split view renders its sidebar as a floating inset panel and lays
@@ -36,7 +37,7 @@ struct RootView: View {
         HStack(spacing: 0) {
             // Reading mode takes the sidebar and the method bar away too. Half the width of a
             // 13-inch screen was going to chrome around a document that wanted all of it.
-            if sidebarInline {
+            if sidebarInline(windowWidth) {
                 Sidebar()
                     .frame(width: sidebarWidth)
                     .background(.bar)
@@ -46,7 +47,9 @@ struct RootView: View {
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
                     if !nav.readingModeActive { MethodBar() }
-                    content
+                    GeometryReader { inner in
+                        content.environment(\.layoutClass, LayoutClass(width: inner.size.width))
+                    }
                 }
                 if let job = importing {
                     ToastView(text: "Importing \(job.done) of \(job.total)…")
@@ -74,7 +77,7 @@ struct RootView: View {
         // Auto-hidden, the sidebar is drawn over the content rather than beside it, so
         // revealing it never resizes the screen underneath — which on the reader would mean
         // refitting the document every time you reached for the navigation.
-        .overlay(alignment: .leading) { if sidebarOverlaid { peekSidebar } }
+        .overlay(alignment: .leading) { if sidebarOverlaid(windowWidth) { peekSidebar } }
         .background(WindowRestorer())
         // Drop a PDF anywhere in the window to add it to the review.
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
@@ -116,12 +119,25 @@ struct RootView: View {
     /// Below a laptop half-screen the sidebar stops taking width of its own and behaves as
     /// though auto-hide were on, whether or not it is — there is no room to spend on
     /// navigation that is one keystroke away (⌘1–⌘9).
-    private var sidebarInline: Bool {
-        showSidebar && !nav.readingModeActive && !autoHideSidebar && layout > .tight
+    /// The width below which the sidebar stops taking a column of its own and becomes the
+    /// edge rail it already knows how to be.
+    ///
+    /// Set to the point where a column for navigation would start costing the reader its
+    /// highlights panel — sidebar, document at its floor, and panel. Lower than this and the
+    /// sidebar was winning an argument it should lose: navigation is one keystroke away
+    /// (⌘1–⌘9), and the panel is where the notes are. It also removes a genuine absurdity,
+    /// where a 900-point window showed less than a 760-point one because the sidebar took
+    /// the room the panel needed.
+    private static let sidebarColumnFloor: CGFloat = 950
+
+    private func sidebarInline(_ windowWidth: CGFloat) -> Bool {
+        showSidebar && !nav.readingModeActive && !autoHideSidebar
+            && windowWidth >= Self.sidebarColumnFloor
     }
 
-    private var sidebarOverlaid: Bool {
-        showSidebar && !nav.readingModeActive && (autoHideSidebar || layout == .tight)
+    private func sidebarOverlaid(_ windowWidth: CGFloat) -> Bool {
+        showSidebar && !nav.readingModeActive
+            && (autoHideSidebar || windowWidth < Self.sidebarColumnFloor)
     }
 
     /// A narrow strip you can push the pointer into, and the sidebar itself once you have.

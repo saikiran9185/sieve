@@ -538,15 +538,46 @@ struct ReaderScreen: View {
         return store.included.first ?? store.papers.first { $0.hasPDF }
     }
 
-    /// In reading mode the panels either side are gone, not merely narrow.
+    /// The narrowest the document itself may be squeezed before a pane has to go.
+    private static let documentFloor: CGFloat = 380
+    private static let dividerWidth: CGFloat = 6
+
+    /// Panes stand down as the reader runs out of width, in the order of what they are worth
+    /// while reading. The paper list goes first — `[` and `]` move through papers without it
+    /// — then the inspector. Your own toggles still win; this only takes back room that was
+    /// never there.
     ///
-    /// They also stand down on their own as the window narrows, in the order of what they
-    /// are worth while reading. The paper list goes first: `[` and `]` move through papers
-    /// without it, so it is the pane you can most afford to lose. The inspector goes only
-    /// when there is no room for a document and a panel at once. Your own toggles still
-    /// win — this only takes room away that was never there.
-    private var railVisible: Bool { showPaperList && !nav.focusMode && layout == .wide }
-    private var inspectorVisible: Bool { showInspector && !nav.focusMode && layout > .tight }
+    /// The arithmetic is done against the reader's *own* width and the pane widths you have
+    /// actually dragged to, not a guess from the size of the window. Guessing was the bug:
+    /// the bands said anything over 1040 points could show all three panes, while a sidebar,
+    /// a paper list, a document at its floor and an inspector need about 1250. Everything
+    /// between those two numbers — which is exactly where an iPad mini on Sidecar lands —
+    /// laid out four panes in the space of three. They overlapped, the document was squeezed
+    /// to nothing, and its toolbars spilled across the panes either side as loose bars.
+    private func inspectorFits(_ available: CGFloat) -> Bool {
+        available >= inspectorWidth + Self.documentFloor + Self.dividerWidth
+    }
+
+    /// The highlights panel outranks the paper list, so the list only appears once the panel
+    /// you read beside is already accommodated. Ordering these the other way round produced
+    /// the worst of both: a list of papers you were not reading, and nowhere to put the notes
+    /// on the one you were.
+    private func railFits(_ available: CGFloat) -> Bool {
+        guard showPaperList else { return false }
+        if showInspector {
+            guard inspectorFits(available) else { return false }
+            return available >= railWidth + inspectorWidth + Self.documentFloor + Self.dividerWidth * 2
+        }
+        return available >= railWidth + Self.documentFloor + Self.dividerWidth
+    }
+
+    private func railVisible(_ available: CGFloat) -> Bool {
+        showPaperList && !nav.focusMode && railFits(available)
+    }
+
+    private func inspectorVisible(_ available: CGFloat) -> Bool {
+        showInspector && !nav.focusMode && inspectorFits(available)
+    }
 
     /// Your marks are shown unless you have hidden them, or unless you have asked for
     /// reading mode to give you the page clean.
@@ -555,13 +586,21 @@ struct ReaderScreen: View {
     }
 
     var body: some View {
+        // Measured here rather than inherited from the window: the reader gets whatever the
+        // sidebar left it, and that is the number the panes have to fit inside.
+        GeometryReader { geo in
+            panes(available: geo.size.width)
+        }
+    }
+
+    private func panes(available: CGFloat) -> some View {
         HStack(spacing: 0) {
-            if railVisible {
+            if railVisible(available) {
                 paperRail.frame(width: railWidth)
                 PaneDivider(width: $railWidth, range: 180...400)
             }
             mainReader.frame(maxWidth: .infinity)
-            if inspectorVisible {
+            if inspectorVisible(available) {
                 PaneDivider(width: $inspectorWidth, range: 260...540, sizesTrailingPane: true)
                 InspectorPanel(paper: paper, controller: controller,
                                focusEvidenceId: $noteTarget, selectedId: $selectedEvidenceId)
@@ -715,7 +754,7 @@ struct ReaderScreen: View {
                 }
             }
         }
-        .frame(minWidth: 420)
+        .frame(minWidth: Self.documentFloor)
         // Everything below is drawn over the document rather than above it in a stack.
         // A control that appears must never resize the page — that resize is what used to
         // throw away the zoom and the scroll position at the exact moment you marked something.
@@ -937,16 +976,13 @@ struct ReaderScreen: View {
 
     private var readerToolbar: some View {
         Toolbar {
-            if !railVisible {
+            if !showPaperList {
                 Button { showPaperList = true } label: {
                     Image(systemName: "sidebar.left").accessibilityHidden(true)
                 }
                 .buttonStyle(.plain)
-                .disabled(layout != .wide)
                 .accessibilityLabel("Show the paper list")
-                .help(layout == .wide
-                      ? "Show the paper list"
-                      : "The window is too narrow for the paper list — ] and [ move through papers")
+                .help("Show the paper list — it stays hidden while the window is too narrow for it")
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(paper?.title ?? "No paper").font(D.body.weight(.medium)).lineLimit(1)
@@ -1000,12 +1036,11 @@ struct ReaderScreen: View {
                 Image(systemName: "sidebar.right").accessibilityHidden(true)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(inspectorVisible ? Color.primary : Color.secondary)
-            .disabled(layout == .tight)
+            .foregroundStyle(showInspector ? Color.primary : Color.secondary)
             .accessibilityLabel(showInspector ? "Hide the highlights panel" : "Show the highlights panel")
-            .help(layout == .tight
-                  ? "The window is too narrow for the highlights panel"
-                  : showInspector ? "Hide the highlights panel" : "Show the highlights panel")
+            .help(showInspector
+                  ? "Hide the highlights panel"
+                  : "Show the highlights panel — it stays hidden while the window is too narrow")
         }
     }
 

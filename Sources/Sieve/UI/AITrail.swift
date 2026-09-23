@@ -113,7 +113,7 @@ struct AITrailView: View {
                     }
                     Spacer()
                     Text(e.at.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
 
                 if let p = store.paper(e.subjectId), e.subjectKind == "paper" || e.subjectKind == "cell" {
@@ -141,7 +141,7 @@ struct AITrailView: View {
 
                 if !e.model.isEmpty {
                     Text("produced by \(e.model)")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
 
                 if e.outcome == .pending && e.kind.needsAdjudication {

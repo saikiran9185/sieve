@@ -459,6 +459,7 @@ struct EvidenceCard: View {
                                 .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                             Spacer()
                             Button { store.deleteRelation(r.id) } label: { Image(systemName: "xmark") }
+                                .accessibilityLabel("Remove this link")
                                 .buttonStyle(.plain).font(.system(size: 8)).foregroundStyle(.tertiary)
                         }
                     }
@@ -499,7 +500,7 @@ struct EvidenceCard: View {
                     }
                     Spacer()
                     Text(evidence.createdAt.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 .foregroundStyle(.secondary)
             }
@@ -651,7 +652,7 @@ struct InlineEvidenceEditor: View {
                       placeholder: "Why does this matter?", onCommit: { _ in save() })
             HStack {
                 Text("Saves as you type · ⌘Z undoes")
-                    .font(.system(size: 9)).foregroundStyle(.tertiary)
+                    .font(.system(size: 9)).foregroundStyle(.secondary)
                 Spacer()
                 Button("Done") { save(); done() }.font(D.small)
             }
@@ -736,7 +737,7 @@ struct RelationEditor: View {
                                         Chip(text: e.stance.label, color: e.stance.color)
                                         if let p = store.paper(e.paperId) {
                                             Text("\(p.citeKey) · p.\(e.page + 1)")
-                                                .font(.system(size: 9)).foregroundStyle(.tertiary)
+                                                .font(.system(size: 9)).foregroundStyle(.secondary)
                                         }
                                     }
                                 }

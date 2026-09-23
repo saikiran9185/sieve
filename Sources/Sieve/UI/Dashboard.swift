@@ -9,19 +9,32 @@ struct DashboardView: View {
 
     private var p: Store.Prisma { store.prisma }
 
+    @Environment(\.layoutClass) private var layout
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: D.s5) {
                 header
                 methodStrip
                 stats
-                HStack(alignment: .top, spacing: D.s4) {
+                // Two columns while there is room for two, one when there is not. The
+                // coverage panel was pinned at 320 points beside a flexible column, so
+                // narrowing the window squeezed the half that carries the reading.
+                if layout == .wide {
+                    HStack(alignment: .top, spacing: D.s4) {
+                        VStack(alignment: .leading, spacing: D.s5) {
+                            gapsPanel
+                            nextStep
+                        }
+                        .frame(maxWidth: .infinity)
+                        coverage.frame(width: 320)
+                    }
+                } else {
                     VStack(alignment: .leading, spacing: D.s5) {
                         gapsPanel
                         nextStep
+                        coverage
                     }
-                    .frame(maxWidth: .infinity)
-                    coverage.frame(width: 320)
                 }
                 if !store.evidence.isEmpty { recentEvidence }
             }
@@ -62,7 +75,7 @@ struct DashboardView: View {
                             }
                         }
                         Spacer()
-                        Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right").font(.system(size: 10)).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -121,7 +134,7 @@ struct DashboardView: View {
                                         .font(.system(size: 17, weight: .medium, design: .rounded))
                                         .foregroundStyle(tint(gap.severity))
                                     Image(systemName: "chevron.right")
-                                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                                        .font(.system(size: 10)).foregroundStyle(.secondary)
                                 }
                             }
                             .background(tint(gap.severity).opacity(gap.severity == .serious ? 0.06 : 0))
@@ -591,7 +604,7 @@ struct SettingsView: View {
                             TextField("you@university.edu", text: $contactEmail)
                                 .textFieldStyle(.roundedBorder).frame(width: 280)
                             Text("OpenAlex, Crossref, PubMed and Unpaywall give faster, more complete results to requests that identify a contact. It is sent only to those services, and only if you fill it in.")
-                                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                                .font(.system(size: 10.5)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -637,7 +650,7 @@ struct SettingsView: View {
                                 }
                             }
                             Text("Put the library on an external drive or in a synced folder. Paths are stored relative to this folder, so moving it doesn't break any record.")
-                                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                                .font(.system(size: 10.5)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -646,7 +659,7 @@ struct SettingsView: View {
                             Text("Reviews/<review>/PDFs/ — one file per paper, one folder per review")
                                 .font(D.mono)
                             Text("Collections are labels, not locations, so the papers themselves stay flat — a paper in three collections is still one file.")
-                                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                                .font(.system(size: 10.5)).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -672,7 +685,7 @@ struct SettingsView: View {
                         Button("Matrix as Excel") { Exporters.exportMatrixXLSX(store, rows: store.included) }
                     }
                     Text("The folder export writes the report PDF, the matrix as .xlsx/.pdf/.csv, the PRISMA flow, every highlight, a BibTeX file, the full library and your search history — with a README explaining each file.")
-                        .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10.5)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 

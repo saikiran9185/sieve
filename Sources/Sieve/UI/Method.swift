@@ -234,7 +234,7 @@ struct MethodBuilder: View {
             HStack(alignment: .top, spacing: D.s4) {
                 VStack(alignment: .leading, spacing: D.s2) {
                     SectionLabel(text: "Available steps")
-                    Text("Click to add.").font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Text("Click to add.").font(.system(size: 10)).foregroundStyle(.secondary)
                     ScrollView {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), spacing: 5)],
                                   alignment: .leading, spacing: 5) {
@@ -261,7 +261,7 @@ struct MethodBuilder: View {
                 VStack(alignment: .leading, spacing: D.s2) {
                     SectionLabel(text: "Your method")
                     Text("A step can appear more than once — screening twice is normal.")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                     ScrollView {
                         VStack(alignment: .leading, spacing: 4) {
                             if method.blocks.isEmpty {
@@ -277,10 +277,13 @@ struct MethodBuilder: View {
                                     Text(b.label).font(D.small)
                                     Spacer()
                                     Button { move(i, -1) } label: { Image(systemName: "chevron.up") }
+                                        .accessibilityLabel("Move this step up")
                                         .buttonStyle(.plain).disabled(i == 0)
                                     Button { move(i, 1) } label: { Image(systemName: "chevron.down") }
+                                        .accessibilityLabel("Move this step down")
                                         .buttonStyle(.plain).disabled(i == method.blocks.count - 1)
                                     Button { method.blocks.remove(at: i) } label: { Image(systemName: "xmark") }
+                                        .accessibilityLabel("Remove this step")
                                         .buttonStyle(.plain).foregroundStyle(Palette.rose)
                                 }
                                 .font(.system(size: 10))

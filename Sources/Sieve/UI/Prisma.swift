@@ -82,7 +82,7 @@ struct PrismaView: View {
                 }
                 Text("Every number is a button — click one to see exactly which records it counts. Boxes with a pencil hold figures PRISMA asks for that screening can't infer; type them in.")
                     .font(D.small).foregroundStyle(.secondary)
-                Text(PrismaChecklist.citation).font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text(PrismaChecklist.citation).font(.system(size: 10)).foregroundStyle(.secondary)
                 sourceBreakdown
             }
             .padding(D.s5)
@@ -596,6 +596,7 @@ struct DrillDownSheet: View {
                                 Spacer()
                                 StageBadge(stage: p.stage)
                                 Button { nav.read(p.id); done() } label: { Image(systemName: "book") }
+                                    .accessibilityLabel("Read this paper")
                                     .buttonStyle(.plain).foregroundStyle(Palette.accent)
                             }
                             .padding(.horizontal, D.s4).padding(.vertical, D.s2 + 2)

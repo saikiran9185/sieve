@@ -78,6 +78,7 @@ struct FramesView: View {
                         store.deleteFrame(f.id); selected = store.frames.first?.id
                     }
                 } label: { Image(systemName: "ellipsis.circle") }
+                    .accessibilityLabel("Framework actions")
                     .menuStyle(.borderlessButton).frame(width: 28)
             }
         }
@@ -95,7 +96,7 @@ struct FramesView: View {
                     }
                     HStack(spacing: 4) {
                         Text("\(store.rows(of: f.id).count)×\(store.cols(of: f.id).count)")
-                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
+                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
                         if g.filled > 0 {
                             Chip(text: "\(g.cited)/\(g.filled) cited",
                                  color: g.cited == g.filled ? Palette.emerald : Palette.amber)
@@ -157,7 +158,7 @@ struct FramesView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(col.name).font(D.small.weight(.semibold)).lineLimit(1)
                         if !col.detail.isEmpty {
-                            Text(col.detail).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(2)
+                            Text(col.detail).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(2)
                         }
                     }
                     Spacer(minLength: 0)
@@ -168,6 +169,7 @@ struct FramesView: View {
                         Divider()
                         Button("Delete column", role: .destructive) { store.deleteAxis(col.id) }
                     } label: { Image(systemName: "chevron.down").font(.system(size: 8)) }
+                        .accessibilityLabel("Choose a framework")
                         .menuStyle(.borderlessButton).frame(width: 16)
                 }
                 .frame(width: 230, alignment: .leading)
@@ -187,7 +189,7 @@ struct FramesView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(row.name).font(D.small.weight(.medium)).lineLimit(2)
             if !row.detail.isEmpty {
-                Text(row.detail).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(3)
+                Text(row.detail).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(3)
             }
             if let sid = row.sourceId, let p = store.paper(sid) {
                 Button { nav.read(p.id) } label: {
@@ -203,6 +205,7 @@ struct FramesView: View {
                 Divider()
                 Button("Delete row", role: .destructive) { store.deleteAxis(row.id) }
             } label: { Image(systemName: "ellipsis").font(.system(size: 9)) }
+                .accessibilityLabel("Row actions")
                 .menuStyle(.borderlessButton).frame(width: 18)
         }
         .frame(width: 190, height: 110, alignment: .topLeading)
@@ -321,7 +324,7 @@ struct FramePicker: View {
                                     Text(s.rows.isEmpty
                                          ? "\(s.cols.count) columns · you add the \(t.rowNoun)s"
                                          : "\(s.rows.count) rows × \(s.cols.count) columns, ready to fill")
-                                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                                        .font(.system(size: 10)).foregroundStyle(.secondary)
                                 }
                             }
                             .background(chosen == t ? Palette.accent.opacity(0.08) : Color.clear)

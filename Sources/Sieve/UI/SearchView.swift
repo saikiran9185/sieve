@@ -133,7 +133,7 @@ struct SearchView: View {
                 filters
             }
             HStack(spacing: 5) {
-                Text("No API:").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text("No API:").font(.system(size: 10)).foregroundStyle(.secondary)
                 ForEach(ExternalSite.all.prefix(6)) { site in
                     Button { openExternal(site) } label: {
                         Chip(text: site.name, color: Palette.slate, icon: "arrow.up.forward")
@@ -232,6 +232,7 @@ struct SearchView: View {
                     Divider()
                     Button("Exact dates…") { showDates = true }
                 } label: { Image(systemName: "calendar") }
+                    .accessibilityLabel("Choose a date range")
                     .menuStyle(.borderlessButton).frame(width: 26)
                     .popover(isPresented: $showDates) { datePopover }
             }
@@ -272,7 +273,7 @@ struct SearchView: View {
         VStack(alignment: .leading, spacing: D.s3) {
             Text("Publication date").font(D.heading)
             Text("Records without a full date are kept, since most databases only report a year.")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary).frame(width: 260)
+                .font(.system(size: 10.5)).foregroundStyle(.secondary).frame(width: 260)
             DatePicker("From", selection: Binding(
                 get: { engine.dateFrom ?? Calendar.current.date(byAdding: .year, value: -5, to: Date())! },
                 set: { engine.dateFrom = $0 }), displayedComponents: .date)
@@ -442,6 +443,7 @@ struct HitRow: View {
                         Button {
                             if let u = SafeLink.forPaper(url: hit.url, doi: hit.doi) { SafeLink.open(u) }
                         } label: { Image(systemName: "arrow.up.forward.square") }
+                            .accessibilityLabel("Open the source")
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help(hit.url)
                     }

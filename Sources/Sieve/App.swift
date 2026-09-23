@@ -29,7 +29,10 @@ struct SieveApp: App {
                 .environmentObject(downloader)
                 .environmentObject(nav)
                 .environmentObject(enricher)
-                .frame(minWidth: 1080, minHeight: 680)
+                // Low enough to put Sieve on half a laptop screen beside the thing you
+                // are writing. What used to hold this at 1080 was three panes that could
+                // not stand down; they can now, so the floor is the reader plus one panel.
+                .frame(minWidth: 720, minHeight: 520)
         }
         .commands {
             // ⌘Z belongs to whatever you are typing in first; only when nothing is being

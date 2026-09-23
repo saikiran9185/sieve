@@ -174,6 +174,7 @@ struct SearchField: View {
                 .onSubmit { onSubmit?() }
             if !text.isEmpty {
                 Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .accessibilityLabel("Clear the search field")
                     .buttonStyle(.plain).foregroundStyle(.tertiary)
             }
         }
@@ -270,7 +271,7 @@ struct ExternalSitesSheet: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(site.name).font(D.body.weight(.medium))
                                     Text(site.blurb).font(D.small).foregroundStyle(.secondary)
-                                    Text(site.howTo).font(.system(size: 10)).foregroundStyle(.tertiary)
+                                    Text(site.howTo).font(.system(size: 10)).foregroundStyle(.secondary)
                                 }
                                 Spacer()
                                 Button("Open") {
@@ -410,5 +411,48 @@ struct MasonryColumns<Item: Identifiable, Content: View>: View {
             heights[shortest] += weight(item)
         }
         return buckets
+    }
+}
+
+// MARK: - How much room there is
+
+/// How wide the window actually is, in three bands the screens can reason about.
+///
+/// Sieve had one layout and a hard floor under it: the window could never be narrower than
+/// 1080 points, so on a 14-inch display it occupied three quarters of the screen and could
+/// not sit beside anything. That floor is also why the app felt crowded — not because it
+/// showed too much, but because three panes and two toolbars were competing at a width the
+/// screen could not afford, with no arrangement allowed to give way.
+///
+/// Panes now stand down as the window narrows, in order of how much they are worth while
+/// reading: the paper list first (you can move through papers with `[` and `]` without it),
+/// then the inspector.
+enum LayoutClass: Int, Comparable {
+    /// Under ~820pt — half a laptop screen. One column of content, nothing beside it.
+    case tight = 0
+    /// Under ~1040pt. Room for the document and one panel.
+    case compact = 1
+    /// Everything at once.
+    case wide = 2
+
+    static func < (a: LayoutClass, b: LayoutClass) -> Bool { a.rawValue < b.rawValue }
+
+    init(width: CGFloat) {
+        switch width {
+        case ..<820: self = .tight
+        case ..<1040: self = .compact
+        default: self = .wide
+        }
+    }
+}
+
+private struct LayoutClassKey: EnvironmentKey {
+    static let defaultValue: LayoutClass = .wide
+}
+
+extension EnvironmentValues {
+    var layoutClass: LayoutClass {
+        get { self[LayoutClassKey.self] }
+        set { self[LayoutClassKey.self] = newValue }
     }
 }

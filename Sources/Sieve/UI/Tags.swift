@@ -96,6 +96,7 @@ struct TagsView: View {
                         Button(uses > 0 ? "Delete (\(uses) highlights lose this tag)" : "Delete",
                                role: .destructive) { store.deleteTag(t.id) }
                     } label: { Image(systemName: "ellipsis") }
+                        .accessibilityLabel("Tag actions")
                         .menuStyle(.borderlessButton).frame(width: 22)
                 }
                 if !t.detail.isEmpty {
@@ -136,7 +137,7 @@ struct TagEditor: View {
         VStack(alignment: .leading, spacing: 5) {
             SectionLabel(text: "Keyboard shortcut")
             Text("Press this with a passage selected to mark it as \(name.isEmpty ? "this tag" : name). Any digit or letter.")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                .font(.system(size: 10.5)).foregroundStyle(.secondary)
 
             FlowRow(spacing: 4) {
                 ForEach(Tag.assignableShortcuts, id: \.self) { key in
@@ -208,7 +209,7 @@ struct TagEditor: View {
             VStack(alignment: .leading, spacing: 4) {
                 SectionLabel(text: "Colour")
                 Text("This is the colour the highlight gets in the PDF.")
-                    .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 HStack(spacing: 6) {
                     ForEach(Palette.highlightHexes, id: \.self) { hex in
                         Button { colorHex = hex } label: {
@@ -231,7 +232,7 @@ struct TagEditor: View {
             VStack(alignment: .leading, spacing: 4) {
                 SectionLabel(text: "Coding rule")
                 Text("What counts as this tag. Shown as a tooltip in the reader, and given to Claude when it suggests tags.")
-                    .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
                 TextField("e.g. Any passage reporting how many participants took part",
                           text: $detail, axis: .vertical)
                     .textFieldStyle(.roundedBorder).lineLimit(3, reservesSpace: true)

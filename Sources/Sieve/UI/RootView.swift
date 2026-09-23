@@ -15,8 +15,17 @@ struct RootView: View {
     // screen you happened to be looking at; `D` reads the same value.
     @AppStorage(UISettings.compactKey) private var compact: Bool = false
     @State private var sidebarPeek = false
+    @Environment(\.layoutClass) private var layout
 
     var body: some View {
+        // The window's own width, measured once at the root and handed down, so every screen
+        // can decide what to stand down rather than each one guessing.
+        GeometryReader { geo in
+            workspace.environment(\.layoutClass, LayoutClass(width: geo.size.width))
+        }
+    }
+
+    private var workspace: some View {
         // A plain HStack, not NavigationSplitView.
         //
         // On macOS 26 the split view renders its sidebar as a floating inset panel and lays
@@ -104,12 +113,15 @@ struct RootView: View {
     }
 
     /// The sidebar takes real width unless you have asked for it to stay out of the way.
+    /// Below a laptop half-screen the sidebar stops taking width of its own and behaves as
+    /// though auto-hide were on, whether or not it is — there is no room to spend on
+    /// navigation that is one keystroke away (⌘1–⌘9).
     private var sidebarInline: Bool {
-        showSidebar && !nav.readingModeActive && !autoHideSidebar
+        showSidebar && !nav.readingModeActive && !autoHideSidebar && layout > .tight
     }
 
     private var sidebarOverlaid: Bool {
-        showSidebar && !nav.readingModeActive && autoHideSidebar
+        showSidebar && !nav.readingModeActive && (autoHideSidebar || layout == .tight)
     }
 
     /// A narrow strip you can push the pointer into, and the sidebar itself once you have.
@@ -337,6 +349,7 @@ struct Sidebar: View {
                     Text(m.name).font(D.label).tracking(0.6)
                     Spacer()
                     Button { nav.section = .method } label: { Image(systemName: "slider.horizontal.3") }
+                        .accessibilityLabel("Change the method or its steps")
                         .buttonStyle(.plain).foregroundStyle(.secondary)
                         .help("Change the method or its steps")
                 }
@@ -630,7 +643,7 @@ struct NewProjectSheet: View {
                 field("Exclude a paper if…", "not in English · no user study · opinion piece", $exclusion, lines: 4)
             }
             Text("Criteria can be edited any time in Settings. They're what the screening view checks against.")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                .font(.system(size: 10.5)).foregroundStyle(.secondary)
 
             field("Notes — for whoever opens this review",
                   "Whose review this is, what it is for, what was agreed, what is deliberately out of scope. Including you, months later.",
@@ -679,7 +692,7 @@ struct NewProjectSheet: View {
                     .help("Move the whole Sieve library — every review, and the PDFs in them")
             }
             Text("The PDFs are ordinary files in ordinary folders. Nothing is uploaded, and nothing needs Sieve to be readable.")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                .font(.system(size: 10.5)).foregroundStyle(.secondary)
         }
     }
 

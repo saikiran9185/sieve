@@ -226,7 +226,7 @@ struct HighlightNoteBox: View {
                 .buttonStyle(.plain).foregroundStyle(.secondary)
                 .help("Remove this highlight without leaving the page")
                 Spacer()
-                Text("⌘Z undoes · esc closes").font(.system(size: 9)).foregroundStyle(.tertiary)
+                Text("⌘Z undoes · esc closes").font(.system(size: 9)).foregroundStyle(.secondary)
                 Button("Done") { save(note); onClose() }
                     .keyboardShortcut(.return, modifiers: .command)
             }

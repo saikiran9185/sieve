@@ -107,7 +107,7 @@ struct MatrixView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(c.name).font(D.small.weight(.semibold)).lineLimit(1)
                         if !c.prompt.isEmpty {
-                            Text(c.prompt).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1)
+                            Text(c.prompt).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
                         }
                     }
                     Spacer()
@@ -118,6 +118,7 @@ struct MatrixView: View {
                         Divider()
                         Button("Delete column", role: .destructive) { store.deleteColumn(c.id) }
                     } label: { Image(systemName: "chevron.down").font(.system(size: 8)) }
+                        .accessibilityLabel("Choose a column")
                         .menuStyle(.borderlessButton).frame(width: 18)
                 }
                 .frame(width: c.width, alignment: .leading)
@@ -375,7 +376,7 @@ struct CellEditor: View {
                                     VStack(alignment: .leading, spacing: 1) {
                                         Text(e.quote).font(D.small).lineLimit(3)
                                             .frame(maxWidth: .infinity, alignment: .leading)
-                                        Text("p.\(e.page + 1)").font(.system(size: 9)).foregroundStyle(.tertiary)
+                                        Text("p.\(e.page + 1)").font(.system(size: 9)).foregroundStyle(.secondary)
                                     }
                                 }
                             }

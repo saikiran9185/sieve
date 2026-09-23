@@ -156,7 +156,7 @@ struct ScreeningView: View {
                             HStack(spacing: 4) {
                                 StageBadge(stage: p.stage)
                                 if !p.excludeReason.isEmpty {
-                                    Text(p.excludeReason).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1)
+                                    Text(p.excludeReason).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
                                 }
                             }
                         }
@@ -276,7 +276,7 @@ struct ScreeningView: View {
                         .foregroundStyle(Palette.rose)
                 }
                 Text("PRISMA needs a reason for every exclusion.")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
 
                 ForEach(Array(ExcludeButton.commonReasons.enumerated()), id: \.offset) { i, reason in
                     Button {
@@ -310,6 +310,7 @@ struct ScreeningView: View {
                     Button {
                         commitCustom()
                     } label: { Image(systemName: "arrow.right.circle.fill") }
+                        .accessibilityLabel("Open this record")
                         .buttonStyle(.plain)
                         .disabled(customReason.isEmpty)
                         .foregroundStyle(customReason.isEmpty ? Color.secondary.opacity(0.4) : Palette.rose)
@@ -403,7 +404,7 @@ struct ScreeningView: View {
                     Text("The attached file can't be read").font(D.small).foregroundStyle(Palette.rose)
                 }
                 Text("Moved, deleted, or not a real PDF. PRISMA counts this as not retrieved.")
-                    .font(.system(size: 10)).foregroundStyle(.tertiary)
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 fetchButton(p)
             } else {
@@ -413,7 +414,7 @@ struct ScreeningView: View {
                 }
                 if store.strictRetrieval {
                     Text("Without one this can't count as retrieved in PRISMA.")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 fetchButton(p)
@@ -660,7 +661,7 @@ struct ScreeningView: View {
     private func editor(_ label: String, _ hint: String, text: Binding<String>, height: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             SectionLabel(text: label)
-            if !hint.isEmpty { Text(hint).font(.system(size: 10)).foregroundStyle(.tertiary) }
+            if !hint.isEmpty { Text(hint).font(.system(size: 10)).foregroundStyle(.secondary) }
             StableTextEditor(text: text)
                 .frame(height: height)
                 .background(D.surface).clipShape(RoundedRectangle(cornerRadius: D.radius))
@@ -682,7 +683,7 @@ struct ScreeningView: View {
                     }
                     Text(v.reason).font(D.small).foregroundStyle(.secondary)
                     Text("A suggestion. Your decision is what gets recorded.")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Accept") {
@@ -928,7 +929,7 @@ struct ShortcutSheet: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(row.what).font(D.body)
                         if !row.note.isEmpty {
-                            Text(row.note).font(.system(size: 10)).foregroundStyle(.tertiary)
+                            Text(row.note).font(.system(size: 10)).foregroundStyle(.secondary)
                         }
                     }
                     Spacer(minLength: 0)

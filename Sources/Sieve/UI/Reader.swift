@@ -524,6 +524,7 @@ struct ReaderScreen: View {
     /// The highlight the panel should scroll to and mark — set by making one, or by
     /// clicking one in the document itself.
     @State private var selectedEvidenceId: Int? = nil
+    @Environment(\.layoutClass) private var layout
 
     /// The reader's own view of the library. "Included" is the default because the point
     /// of this screen is the papers that made it into the review.
@@ -538,8 +539,14 @@ struct ReaderScreen: View {
     }
 
     /// In reading mode the panels either side are gone, not merely narrow.
-    private var railVisible: Bool { showPaperList && !nav.focusMode }
-    private var inspectorVisible: Bool { showInspector && !nav.focusMode }
+    ///
+    /// They also stand down on their own as the window narrows, in the order of what they
+    /// are worth while reading. The paper list goes first: `[` and `]` move through papers
+    /// without it, so it is the pane you can most afford to lose. The inspector goes only
+    /// when there is no room for a document and a panel at once. Your own toggles still
+    /// win — this only takes room away that was never there.
+    private var railVisible: Bool { showPaperList && !nav.focusMode && layout == .wide }
+    private var inspectorVisible: Bool { showInspector && !nav.focusMode && layout > .tight }
 
     /// Your marks are shown unless you have hidden them, or unless you have asked for
     /// reading mode to give you the page clean.
@@ -587,6 +594,7 @@ struct ReaderScreen: View {
                 SectionLabel(text: "Papers")
                 Spacer()
                 Button { showPaperList = false } label: { Image(systemName: "sidebar.left") }
+                    .accessibilityLabel("Hide the paper list")
                     .buttonStyle(.plain).foregroundStyle(.secondary)
             }
             .padding(.horizontal, D.s3).padding(.top, D.s3).padding(.bottom, 6)
@@ -633,7 +641,7 @@ struct ReaderScreen: View {
                                     Spacer()
                                     if !p.hasPDF {
                                         Image(systemName: "doc.badge.plus")
-                                            .font(.system(size: 9)).foregroundStyle(.tertiary)
+                                            .font(.system(size: 9)).foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -929,9 +937,16 @@ struct ReaderScreen: View {
 
     private var readerToolbar: some View {
         Toolbar {
-            if !showPaperList {
-                Button { showPaperList = true } label: { Image(systemName: "sidebar.left") }
-                    .buttonStyle(.plain)
+            if !railVisible {
+                Button { showPaperList = true } label: {
+                    Image(systemName: "sidebar.left").accessibilityHidden(true)
+                }
+                .buttonStyle(.plain)
+                .disabled(layout != .wide)
+                .accessibilityLabel("Show the paper list")
+                .help(layout == .wide
+                      ? "Show the paper list"
+                      : "The window is too narrow for the paper list — ] and [ move through papers")
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text(paper?.title ?? "No paper").font(D.body.weight(.medium)).lineLimit(1)
@@ -945,7 +960,9 @@ struct ReaderScreen: View {
                 Text("\(controller.searchIndex + 1)/\(controller.searchMatches.count)")
                     .font(D.small.monospacedDigit()).foregroundStyle(.secondary)
                 Button { controller.stepMatch(-1) } label: { Image(systemName: "chevron.up") }.buttonStyle(.plain)
+                    .accessibilityLabel("Previous match")
                 Button { controller.stepMatch(1) } label: { Image(systemName: "chevron.down") }.buttonStyle(.plain)
+                    .accessibilityLabel("Next match")
             }
             Divider().frame(height: 16)
             UndoRedoButtons(history: store.history, store: store)
@@ -983,8 +1000,12 @@ struct ReaderScreen: View {
                 Image(systemName: "sidebar.right").accessibilityHidden(true)
             }
             .buttonStyle(.plain)
-            .foregroundStyle(showInspector ? Color.primary : Color.secondary)
-            .help(showInspector ? "Hide the highlights panel" : "Show the highlights panel")
+            .foregroundStyle(inspectorVisible ? Color.primary : Color.secondary)
+            .disabled(layout == .tight)
+            .accessibilityLabel(showInspector ? "Hide the highlights panel" : "Show the highlights panel")
+            .help(layout == .tight
+                  ? "The window is too narrow for the highlights panel"
+                  : showInspector ? "Hide the highlights panel" : "Show the highlights panel")
         }
     }
 
@@ -1054,7 +1075,7 @@ struct ReaderScreen: View {
                 .accessibilityLabel(st.label)
             }
             if blurb {
-                Text(stance.blurb).font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text(stance.blurb).font(.system(size: 10)).foregroundStyle(.secondary)
                     .lineLimit(1).fixedSize()
             }
         }
@@ -1334,7 +1355,7 @@ struct ThoughtSheet: View {
             }
 
             HStack {
-                Text("Filed against page \(page + 1)").font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text("Filed against page \(page + 1)").font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
                 Button("Cancel", action: done).keyboardShortcut(.cancelAction)
                 Button("Save") {

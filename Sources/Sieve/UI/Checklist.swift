@@ -96,7 +96,7 @@ struct ChecklistView: View {
                 .help("PRISMA 2020 explanation and elaboration — BMJ 2021;372:n160")
             }
             Text("Mark where in your manuscript each item is reported. “Where it is reported” is the column the journal will ask you to submit.")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                .font(.system(size: 10.5)).foregroundStyle(.secondary)
         }
         .padding(D.s4)
     }

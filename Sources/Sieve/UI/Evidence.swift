@@ -17,6 +17,7 @@ struct EvidenceView: View {
     @State private var showAsk = false
     @State private var stanceFilter: Set<Stance> = []
     @State private var verificationFilter: Set<Verification> = []
+    @Environment(\.layoutClass) private var layout
 
     enum Grouping: String, CaseIterable, Identifiable {
         case stance = "Evidence / thinking", tag = "By category", paper = "By paper", none = "Flat list"
@@ -59,12 +60,30 @@ struct EvidenceView: View {
 
     private var toolbar: some View {
         Toolbar {
-            SearchField(placeholder: "Search inside your highlights", text: $search)
-                .frame(maxWidth: 320)
-            Picker("", selection: $grouping) {
-                ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
+            SearchField(placeholder: layout == .wide ? "Search inside your highlights" : "Search",
+                        text: $search)
+                .frame(minWidth: 110, maxWidth: 320)
+            // A four-way segmented control needs 330 points and has no way to give any of
+            // them back, so below a wide window it becomes the same choice as a menu —
+            // which costs a click and nothing else.
+            if layout == .wide {
+                Picker("", selection: $grouping) {
+                    ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 330)
+                .accessibilityLabel("Group the highlights")
+            } else {
+                Menu {
+                    Picker("", selection: $grouping) {
+                        ForEach(Grouping.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .labelsHidden().pickerStyle(.inline)
+                } label: {
+                    Label(grouping.rawValue, systemImage: "square.grid.2x2")
+                }
+                .frame(width: 150)
+                .accessibilityLabel("Group the highlights")
             }
-            .pickerStyle(.segmented).labelsHidden().frame(width: 330)
             Menu {
                 Button("All papers") { paperFilter = nil }
                 Divider()
@@ -72,12 +91,18 @@ struct EvidenceView: View {
                     Button("\(p.citeKey) — \(p.title.prefix(50))") { paperFilter = p.id }
                 }
             } label: {
-                Label(paperFilter.flatMap { store.paper($0)?.citeKey } ?? "All papers", systemImage: "doc.text")
+                Label(paperFilter.flatMap { store.paper($0)?.citeKey }
+                      ?? (layout == .wide ? "All papers" : "All"),
+                      systemImage: "doc.text")
             }
-            .frame(width: 160)
+            .frame(width: layout == .wide ? 160 : 110)
+            .accessibilityLabel("Filter by paper")
             Spacer()
             UndoRedoButtons(history: store.history, store: store)
-            Text("\(items.count) of \(store.evidence.count)").font(D.small).foregroundStyle(.secondary)
+            if layout > .tight {
+                Text("\(items.count) of \(store.evidence.count)")
+                    .font(D.small).foregroundStyle(.secondary).fixedSize()
+            }
             if Assistant.isAvailable && assistant.enabled {
                 Button { showAsk = true } label: { Label("Ask across papers", systemImage: "sparkle") }
                     .help("Ask a question and get an answer built only from your own highlights, with citations")

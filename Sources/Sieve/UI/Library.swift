@@ -185,7 +185,7 @@ struct LibraryView: View {
                             .buttonStyle(.plain).opacity(n == 0 ? 0.4 : 1)
                         }
                     }
-                    .frame(width: 380)
+                    .frame(minWidth: 236, maxWidth: 380)
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
@@ -395,7 +395,7 @@ struct FolderTree: View {
                         }
                     } else {
                         Text("No collections yet. They're labels, not folders — a paper can be in several at once and nothing moves on disk.")
-                            .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.vertical, 4)
                     }
@@ -407,6 +407,7 @@ struct FolderTree: View {
                             Button("New collection…") { create(parent: nil) }
                             Button("Collection that fills itself…") { showSmartPicker = true }
                         } label: { Image(systemName: "plus") }
+                            .accessibilityLabel("New collection")
                             .menuStyle(.borderlessButton).frame(width: 22)
                     }
                 }
@@ -414,7 +415,7 @@ struct FolderTree: View {
             .listStyle(.sidebar)
 
             Text("Filing a paper never moves the file. A paper can be in several collections.")
-                .font(.system(size: 9.5)).foregroundStyle(.tertiary)
+                .font(.system(size: 9.5)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(D.s3)
         }
@@ -456,7 +457,7 @@ struct FolderTree: View {
                 .font(isRoot ? D.small.weight(.semibold) : D.small)
                 .lineLimit(1)
             Spacer()
-            Text("\(count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.tertiary)
+            Text("\(count)").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
         }
         .padding(.leading, CGFloat(depth) * 12)
         .padding(.vertical, isRoot ? 3 : 2)
@@ -548,7 +549,7 @@ struct SmartCollectionSheet: View {
                             Spacer()
                             Text("\(matchCount(rule))")
                                 .font(D.small.monospacedDigit()).foregroundStyle(.tertiary)
-                            if already { Text("added").font(.system(size: 10)).foregroundStyle(.tertiary) }
+                            if already { Text("added").font(.system(size: 10)).foregroundStyle(.secondary) }
                         }
                         .padding(D.s2)
                         .background(chosen.contains(rule) ? Palette.accent.opacity(0.07) : Color.clear)
@@ -714,6 +715,7 @@ struct PaperRow: View {
                                 store.flash("That record has no usable web link")
                             }
                         } label: { Image(systemName: "arrow.up.forward.square") }
+                            .accessibilityLabel("Open the source")
                             .buttonStyle(.plain).foregroundStyle(.secondary)
                             .help("Open the source page")
                     }
@@ -743,6 +745,7 @@ struct PaperRow: View {
                         Divider()
                         Button("Remove from review", role: .destructive) { store.deletePaper(paper.id) }
                     } label: { Image(systemName: "ellipsis") }
+                        .accessibilityLabel("Paper actions")
                         .menuStyle(.borderlessButton).frame(width: 24)
                 }
                 .opacity(hovering ? 1 : 0.6)
@@ -822,7 +825,7 @@ struct NewSourceSheet: View {
             }
 
             Text("Drop a transcript PDF onto the window afterwards to attach it, and you can highlight it like any other document.")
-                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                .font(.system(size: 10.5)).foregroundStyle(.secondary)
 
             HStack {
                 Spacer()

@@ -175,7 +175,9 @@ struct MapView: View {
     private var zoomControls: some View {
         HStack(spacing: 4) {
             Button { withAnimation { zoom = max(0.25, zoom - 0.2) } } label: { Image(systemName: "minus") }
+                .accessibilityLabel("Zoom out")
             Button { withAnimation { zoom = min(3, zoom + 0.2) } } label: { Image(systemName: "plus") }
+                .accessibilityLabel("Zoom in")
         }
         .buttonStyle(.bordered)
     }
@@ -514,6 +516,7 @@ struct SuggestionPanel: View {
                                 if !s.doi.isEmpty {
                                     Button { SafeLink.open("https://doi.org/\(s.doi)") }
                                         label: { Image(systemName: "arrow.up.forward.square") }
+                                            .accessibilityLabel("Open the source")
                                         .buttonStyle(.plain).foregroundStyle(.secondary)
                                 }
                             }

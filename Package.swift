@@ -4,15 +4,19 @@ import PackageDescription
 let package = Package(
     name: "Sieve",
     // Only constrains Apple builds; Windows and Linux builds are unaffected by it.
-    platforms: [.macOS(.v14)],
+    // iOS is here for SieveCore alone — the engine an iPad app would sit on. The Mac
+    // executable below is AppKit through and through and does not build for it.
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         // The portable engine: database providers, deduplication, parsing and
         // exporters. No Apple frameworks, so it builds on Windows and Linux too.
         .library(name: "SieveCore", targets: ["SieveCore"])
     ],
     targets: [
-        // Deliberately carries no `platforms:` pin and imports no Apple UI
-        // framework. Anything added here must compile on Windows.
+        // Imports no Apple UI framework, so it builds for Windows, Linux, macOS and iOS
+        // alike. Anything added here must hold to that. (SwiftPM has no per-target
+        // platform setting — the package-level pin above applies here too on Apple
+        // platforms, and is simply ignored elsewhere.)
         .target(
             name: "SieveCore",
             path: "Sources/SieveCore",

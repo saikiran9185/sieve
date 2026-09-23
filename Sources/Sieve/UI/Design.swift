@@ -155,6 +155,11 @@ struct Toolbar<Content: View>: View {
         HStack(spacing: D.s2) { content }
             .padding(.horizontal, D.s4)
             .padding(.vertical, D.s2 + 2)
+            // Fill the pane rather than set it. Without this a toolbar's natural width
+            // becomes the minimum width of the screen beneath it, and a screen that cannot
+            // shrink overflows the window instead of adapting to it.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
             .background(.bar)
             .overlay(alignment: .bottom) { Rectangle().fill(D.hairline).frame(height: 0.5) }
     }

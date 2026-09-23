@@ -540,7 +540,9 @@ struct ReaderScreen: View {
 
     /// The narrowest the document itself may be squeezed before a pane has to go.
     private static let documentFloor: CGFloat = 380
-    private static let dividerWidth: CGFloat = 6
+    /// A PaneDivider occupies a single point of layout; its 10-point grab area is an
+    /// overlay and costs nothing. Reserving more than this leaves a gap down the edge.
+    private static let dividerWidth: CGFloat = 1
 
     /// Panes stand down as the reader runs out of width, in the order of what they are worth
     /// while reading. The paper list goes first — `[` and `]` move through papers without it
@@ -594,12 +596,22 @@ struct ReaderScreen: View {
     }
 
     private func panes(available: CGFloat) -> some View {
-        HStack(spacing: 0) {
+        // The document's width is computed, not negotiated. Left to SwiftUI, the reader's
+        // minimum was whatever its own toolbars demanded — and those had no width limit, so
+        // their natural size became a floor the pane could not go under. The HStack then let
+        // it overflow, and because a VStack centres its children the over-wide bars spilled
+        // out of both sides of the pane: across the paper list on the left, under the
+        // highlights panel on the right.
+        let railSpace = railVisible(available) ? railWidth + Self.dividerWidth : 0
+        let inspectorSpace = inspectorVisible(available) ? inspectorWidth + Self.dividerWidth : 0
+        let documentWidth = max(Self.documentFloor, available - railSpace - inspectorSpace)
+
+        return HStack(spacing: 0) {
             if railVisible(available) {
                 paperRail.frame(width: railWidth)
                 PaneDivider(width: $railWidth, range: 180...400)
             }
-            mainReader.frame(maxWidth: .infinity)
+            mainReader.frame(width: documentWidth)
             if inspectorVisible(available) {
                 PaneDivider(width: $inspectorWidth, range: 260...540, sizesTrailingPane: true)
                 InspectorPanel(paper: paper, controller: controller,
@@ -720,7 +732,9 @@ struct ReaderScreen: View {
     // MARK: Centre — the document
 
     private var mainReader: some View {
-        VStack(spacing: 0) {
+        // `.leading`, not the default centre: if anything in here ever does exceed the pane,
+        // it should run off the edge it belongs to rather than out of both sides at once.
+        VStack(alignment: .leading, spacing: 0) {
             if nav.focusMode {
                 // One solid row, and the page starts below it. Floating this over the
                 // document put a translucent bar across the first lines of every page —
@@ -754,7 +768,8 @@ struct ReaderScreen: View {
                 }
             }
         }
-        .frame(minWidth: Self.documentFloor)
+        .frame(minWidth: Self.documentFloor, alignment: .leading)
+        .clipped()
         // Everything below is drawn over the document rather than above it in a stack.
         // A control that appears must never resize the page — that resize is what used to
         // throw away the zoom and the scroll position at the exact moment you marked something.
@@ -782,7 +797,9 @@ struct ReaderScreen: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, D.s3).padding(.vertical, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 34)
+        .clipped()
         .background(D.surface)
     }
 
@@ -804,7 +821,7 @@ struct ReaderScreen: View {
                 Button { activeTagId = tag.id; highlight(with: tag) } label: {
                     HStack(spacing: 3) {
                         RoundedRectangle(cornerRadius: 3).fill(tag.color).frame(width: 10, height: 10)
-                        if showName { Text(tag.name).font(D.small).lineLimit(1).fixedSize() }
+                        if showName { Text(tag.name).font(D.small).lineLimit(1) }
                         if showShortcut && !tag.shortcut.isEmpty {
                             Text(tag.shortcut).font(.system(size: 9, design: .monospaced))
                                 .foregroundStyle(.tertiary)
@@ -1081,7 +1098,9 @@ struct ReaderScreen: View {
             colourStrip
         }
         .padding(.horizontal, D.s4).padding(.vertical, D.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: D.dense ? 58 : 66)
+        .clipped()
         .background(D.surface)
         .sheet(isPresented: $showThought) {
             if let p = paper {
@@ -1092,12 +1111,12 @@ struct ReaderScreen: View {
 
     private func stanceRow(prefix: Bool, labels: Bool, blurb: Bool) -> some View {
         HStack(spacing: D.s2) {
-            if prefix { Text("Recording").font(D.small).foregroundStyle(.secondary).fixedSize() }
+            if prefix { Text("Recording").font(D.small).foregroundStyle(.secondary).lineLimit(1) }
             ForEach(Stance.allCases) { st in
                 Button { stance = st } label: {
                     HStack(spacing: 4) {
                         Image(systemName: st.icon).font(.system(size: 9)).accessibilityHidden(true)
-                        if labels { Text(st.label).font(D.small).fixedSize() }
+                        if labels { Text(st.label).font(D.small).lineLimit(1) }
                     }
                     .padding(.horizontal, labels ? 8 : 6).padding(.vertical, 3)
                     .background(stance == st ? st.color.opacity(0.18) : Color.secondary.opacity(0.06))
@@ -1111,7 +1130,7 @@ struct ReaderScreen: View {
             }
             if blurb {
                 Text(stance.blurb).font(.system(size: 10)).foregroundStyle(.secondary)
-                    .lineLimit(1).fixedSize()
+                    .lineLimit(1)
             }
         }
     }
@@ -1142,14 +1161,14 @@ struct ReaderScreen: View {
 
     private func readerColours(prefix: Bool, showName: Bool, showShortcut: Bool) -> some View {
         HStack(spacing: D.s2) {
-            if prefix { Text("as").font(D.small).foregroundStyle(.secondary).fixedSize() }
+            if prefix { Text("as").font(D.small).foregroundStyle(.secondary).lineLimit(1) }
             ForEach(store.categoryTags) { tag in
                 Button { activeTagId = tag.id; highlight(with: tag) } label: {
                     HStack(spacing: 5) {
                         RoundedRectangle(cornerRadius: 3)
                             .fill(tag.color)
                             .frame(width: 12, height: 12)
-                        if showName { Text(tag.name).font(D.small).fixedSize() }
+                        if showName { Text(tag.name).font(D.small).lineLimit(1) }
                         if showShortcut && !tag.shortcut.isEmpty {
                             Text(tag.shortcut).font(.system(size: 9, design: .monospaced))
                                 .foregroundStyle(.tertiary)

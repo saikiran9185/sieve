@@ -22,9 +22,12 @@ jobs:
       # maps (ucrt, visualc) only resolve inside a Visual Studio developer environment.
       # Without this the build dies on "could not build module 'ucrt'" before it reaches
       # any Swift of ours.
-      - uses: compnerd/gha-setup-vsdevenv@main
+      # Pinned to a commit, not a branch: this workflow runs on pull_request, so a
+      # moving tag would let an upstream force-push change what executes in CI, and
+      # would make a green run today go red tomorrow with no change of ours.
+      - uses: compnerd/gha-setup-vsdevenv@452f99effa381b81c025ccfbdccaca509bff1b29
 
-      - uses: compnerd/gha-setup-swift@main
+      - uses: compnerd/gha-setup-swift@bbae8ce86bac5a3449f3992b3d88bc4ca25f2057
         with:
           branch: swift-6.0.3-release
           tag: 6.0.3-RELEASE
@@ -32,8 +35,14 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      # `swift build` does not build test targets, and `--target SieveCore` excludes
+      # them outright — so the suite has to be invoked directly or it is decoration.
+      # This job's whole claim is that a regression in the engine goes red here.
       - name: Build SieveCore
         run: swift build --target SieveCore -v
+
+      - name: Test SieveCore
+        run: swift test
 
   linux:
     name: Linux (Swift 6)
@@ -48,6 +57,9 @@ jobs:
       - name: Build SieveCore
         run: swift build --target SieveCore
 
+      - name: Test SieveCore
+        run: swift test
+
   macos:
     name: macOS (full app)
     # macos-14 still defaults to Swift 5.10, which cannot read a
@@ -61,3 +73,6 @@ jobs:
 
       - name: Build everything
         run: swift build
+
+      - name: Test SieveCore
+        run: swift test

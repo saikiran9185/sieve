@@ -217,6 +217,35 @@ struct ProviderRegistryTests {
         }
     }
 
+    @Test("Every key-gated provider tells you where to get a key")
+    func gatedProvidersExplainThemselves() {
+        for provider in ProviderRegistry.all where provider.needsKey {
+            #expect(provider.signupURL != nil, "\(provider.name) has no signup URL")
+            #expect(SafeLink.web(provider.signupURL ?? "") != nil,
+                    "\(provider.name) signup URL is not a safe web link")
+        }
+    }
+
+    @Test("Every provider describes itself")
+    func blurbs() {
+        for provider in ProviderRegistry.all {
+            #expect(!provider.blurb.isEmpty, "\(provider.name) has no blurb")
+        }
+    }
+}
+
+// MARK: - Readiness
+
+/// Serialised, because both of these swap the process-wide `Secrets.store`.
+///
+/// Run in parallel they corrupt each other in both directions: `keyMakesReady` writes a key
+/// for the *first* gated provider, which is one of the providers `gatedProvidersNotReady`
+/// asserts is unready — and `gatedProvidersNotReady` installs an empty store that can land
+/// between the other test's write and its assertion. It passed only by timing. The rest of
+/// the suite stays parallel; only the two tests that share global state give that up.
+@Suite("Provider readiness", .serialized)
+struct ProviderReadinessTests {
+
     @Test("A key-gated provider stays unready until a key exists")
     func gatedProvidersNotReady() {
         Secrets.store = EphemeralSecretStore()
@@ -234,21 +263,5 @@ struct ProviderRegistryTests {
         let account = try #require(gated.keyDefault)
         store.set("a-key", for: account)
         #expect(gated.isReady)
-    }
-
-    @Test("Every key-gated provider tells you where to get a key")
-    func gatedProvidersExplainThemselves() {
-        for provider in ProviderRegistry.all where provider.needsKey {
-            #expect(provider.signupURL != nil, "\(provider.name) has no signup URL")
-            #expect(SafeLink.web(provider.signupURL ?? "") != nil,
-                    "\(provider.name) signup URL is not a safe web link")
-        }
-    }
-
-    @Test("Every provider describes itself")
-    func blurbs() {
-        for provider in ProviderRegistry.all {
-            #expect(!provider.blurb.isEmpty, "\(provider.name) has no blurb")
-        }
     }
 }

@@ -189,3 +189,40 @@ But **it never records a decision**, and everything it writes carries an **AI** 
 | 08 | Comparison | The table from section 6 |
 | 09 | Target audience | Beachhead → paying → campus |
 | 10 | Sustainability | Low cost, freemium, moat, risks |
+
+---
+
+## Real case: how a review is actually done (slide 03)
+
+Source: DRT (DI IX-703) Session 3, B.Design 7th sem, GGSIPU, 3 Sep 2026. The session was led by a full-time PhD research scholar; course faculty Dr. Nanki Nath.
+
+**The assignment:**
+- find 10 papers from the last 5 years on cosmetic box packaging and the SDGs
+- use good journals only (Scopus, Web of Science, Elsevier, ScienceDirect)
+- build a literature matrix
+- apply PRISMA
+- hand everything in as one Word file
+
+**The workflow the session taught:**
+1. **Search** Google Scholar with Boolean operators (AND, OR, NOT/-, " ", (), +, intitle, author, source).
+2. **Filter** by year and by journal quality.
+3. **Read.** AI tools (NotebookLM, ResearchRabbit, Consensus) are allowed "to read paper (only)", and the matrix must be "in your own words".
+4. **Literature matrix:** a table in Word.
+5. **PRISMA,** taught as three stages:
+   - Identification: all records from the databases, found with a Boolean string
+   - Screening: title and abstract checked against the criteria
+   - Analysis: synthesis and interpretation
+   
+   The diagram is drawn by hand.
+6. **Gap:** the session named seven gap types (evidence, knowledge, practical-knowledge, methodological, empirical, theoretical, population).
+
+**What this proves for the pitch:**
+- Even a 10-paper student review spans five or more tools and ends in a hand-drawn PRISMA diagram.
+- The faculty rule is "AI to read only, your own words", which is exactly Sieve's stance: AI assists, the human decides.
+- Sieve covers every step:
+  - search across many databases
+  - screening with reasons
+  - a reader whose highlights become evidence
+  - a matrix built from those highlights
+  - PRISMA that counts itself
+  - "What am I missing" for the gaps

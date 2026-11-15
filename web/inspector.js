@@ -312,7 +312,7 @@ export function thoughtSheet(ctx, io, STANCES) {
     for (const key of ['interpretation', 'question', 'evidence']) {
       const s = STANCES[key];
       const b = el('button', 'stance-option');
-      b.style.color = s.color;
+      b.style.setProperty('--c', s.color);
       b.appendChild(el('strong', null, s.label));
       b.appendChild(el('span', 'meta', s.hint));
       b.onclick = () => {
@@ -336,7 +336,7 @@ export function thoughtSheet(ctx, io, STANCES) {
     cat.appendChild(el('span', 'meta', 'Category'));
     for (const t of ctx.state.tags) {
       const b = el('button', 'swatch');
-      b.style.color = t.color;
+      b.style.setProperty('--c', t.color);
       const dot = el('span', 'dot');
       dot.style.background = t.color;
       b.append(dot, el('span', null, t.name));
@@ -390,6 +390,6 @@ export function shortcutSheet(ctx) {
     }
     sheet.appendChild(list);
     sheet.appendChild(el('p', 'hint',
-      'Keys work while the reader is open and nothing is focused in a text field. Screening has its own: I to include, E to exclude, D for duplicate, and the arrow keys to move.'));
+      'Keys work while the reader is open and nothing is focused in a text field. Screening has its own: F to keep, 1–9 to exclude with that reason, J and K to move. Press ? anywhere for the full list.'));
   });
 }

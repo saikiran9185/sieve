@@ -21,6 +21,9 @@ import * as citations from './citations.js';
 import * as retrieve from './retrieve.js';
 import { readZip } from './zip.js';
 import { dedupeKey } from './search.js';
+import * as auth from './auth.js';
+import * as sync from './sync.js';
+import * as extras from './extras.js';
 
 const $ = (s) => document.querySelector(s);
 const el = views.el;
@@ -48,12 +51,23 @@ async function boot() {
   // The buttons are wired before anything is loaded. If the library is slow, or refuses to
   // open at all, a sidebar whose every control is dead is a worse answer than an empty one.
   wire();
+  // Accounts are optional and never hold the library hostage: started without awaiting.
+  auth.start().catch(err => console.warn('Accounts unavailable', err));
+  // Another device changed the library: reload the open review from the local copy.
+  window.addEventListener('sieve:remote-change', async () => {
+    if (state.project?.id != null) state.project = (await db.get('projects', state.project.id)) || state.project;
+    await refresh();
+  });
+  window.addEventListener('sieve:sync-status', (e) => showSyncLine(e.detail));
   try {
     state.projects = await db.seed();
     const savedId = (await db.get('meta', 'currentProject'))?.value;
     state.project = state.projects.find(p => p.id === savedId) || state.projects[0];
     await refresh();
     go('overview');
+    sync.ready();
+    extras.wireExtras(ctx);
+    setTimeout(() => extras.maybeWelcome(ctx), 600);
   } catch (err) {
     cannotOpen(err);
     return;
@@ -326,6 +340,18 @@ async function folderPayload() {
 }
 
 let syncTimer = null;
+function showSyncLine(st) {
+  const line = $('#syncLine');
+  if (!line) return;
+  const words = { off: '', syncing: 'Syncing…', synced: 'Synced to your account', pending: 'Changes waiting to sync',
+    offline: 'Offline · will sync later', error: 'Sync paused · click to retry' };
+  line.hidden = st.state === 'off';
+  line.dataset.state = st.state;
+  line.querySelector('span:last-child').textContent = words[st.state] || '';
+  line.title = st.detail || (st.at ? `Last checked ${st.at.toLocaleTimeString()}` : '');
+  line.onclick = () => sync.syncNow();
+}
+
 function scheduleSync() {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(async () => {
@@ -358,6 +384,10 @@ function renderLibrary() {
 
   if (!state.sources.length) {
     const e = el('div', 'empty');
+    const pic = el('div', 'illus');
+    const img = el('img'); img.src = 'img/cat-wave.png'; img.alt = '';
+    pic.appendChild(img);
+    e.appendChild(pic);
     e.appendChild(el('h2', null, 'Nothing here yet'));
     e.appendChild(el('p', null, 'Search the databases under Find papers, or drop PDFs anywhere on this page. They are stored on this computer and never uploaded.'));
     list.appendChild(e);
@@ -755,7 +785,7 @@ function renderPalette() {
   stances.innerHTML = '';
   for (const [key, s] of Object.entries(STANCES)) {
     const b = el('button', 'swatch');
-    b.style.color = s.color;
+    b.style.setProperty('--c', s.color);
     b.textContent = s.label;
     b.setAttribute('aria-pressed', String(state.stance === key));
     b.title = s.hint;
@@ -768,7 +798,7 @@ function renderPalette() {
   box.innerHTML = '';
   for (const t of state.tags) {
     const b = el('button', 'swatch');
-    b.style.color = t.color;
+    b.style.setProperty('--c', t.color);
     const dot = el('span', 'dot'); dot.style.background = t.color;
     b.appendChild(dot);
     b.appendChild(el('span', null, t.name));
@@ -1328,12 +1358,19 @@ function evidenceCsv() {
 }
 
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, action) {
   const t = $('#toast');
   t.textContent = msg;
-  t.classList.remove('hidden');
+  if (action) {
+    const b = el('button', 'toast-action', action.label);
+    b.onclick = () => { t.classList.add('hidden'); clearTimeout(toastTimer); action.run(); };
+    t.appendChild(b);
+  }
+  t.setAttribute('role', 'status');
+  // Restart the entrance so a second toast is noticed.
+  t.classList.add('hidden'); void t.offsetWidth; t.classList.remove('hidden');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.add('hidden'), 2800);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), action ? 5000 : 2800);
 }
 
 boot();

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sieve · Screening preview</title>
+<style>
+@font-face{font-family:"Instrument Serif";src:url(../../web/fonts/instrument-serif-400.woff2) format("woff2");font-weight:400}
+@font-face{font-family:"Public Sans";src:url(../../web/fonts/public-sans-400.woff2) format("woff2");font-weight:400}
+@font-face{font-family:"Public Sans";src:url(../../web/fonts/public-sans-600.woff2) format("woff2");font-weight:600}
+:root{
+  --sky:#A9D6FE;--orange:#F58B23;--coral:#FAA09B;--ink:#302C28;--mist:#EDECED;--paper:#FFFFFF;
+  --line:2px solid var(--edge);--lift:0 4px 0 var(--shadow);--r:18px;
+  --serif:"Instrument Serif",Georgia,serif;--sans:"Public Sans",system-ui,sans-serif;
+  --bg:var(--mist);--surface:var(--paper);--text:var(--ink);--edge:var(--ink);--shadow:var(--ink);--on-accent:var(--ink);--coral-tint:#fff3f2;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#1E1B19;--surface:var(--ink);--text:var(--paper);--edge:#A8A19A;--shadow:#A8A19A;--coral-tint:#4a3533;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#1E1B19;--surface:var(--ink);--text:var(--paper);--edge:#A8A19A;--shadow:#A8A19A;--coral-tint:#4a3533;color-scheme:dark}
+.theme{margin-top:8px;border:var(--line);border-radius:12px;background:var(--surface);padding:7px 10px;font-size:13px;font-weight:600;text-align:left}
+*{box-sizing:border-box;margin:0}
+body{font:15px/1.5 var(--sans);color:var(--text);background:var(--bg);min-height:100vh}
+button{font:inherit;color:inherit;cursor:pointer}
+.app{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+
+/* sidebar */
+.side{background:var(--surface);border-right:var(--line);padding:20px 14px;display:flex;flex-direction:column;gap:4px}
+.brand{font:34px/1 var(--serif);padding:0 10px 14px;display:flex;align-items:baseline;gap:2px}
+.brand i{width:9px;height:9px;background:var(--orange);border-radius:50%;display:inline-block}
+.review{border:var(--line);border-radius:14px;padding:10px 12px;margin-bottom:14px;text-align:left;background:var(--surface)}
+.review b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.review small{font-size:12px;opacity:.8}
+.group{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.8;padding:14px 10px 4px}
+.nav{display:flex;justify-content:space-between;align-items:center;border:2px solid transparent;background:none;border-radius:12px;padding:7px 10px;text-align:left}
+.nav:hover{border-color:var(--edge)}
+.nav[aria-current]{background:var(--sky);color:var(--on-accent);border:var(--line);box-shadow:var(--lift);font-weight:600}
+.count{font-size:12px;font-weight:600;background:var(--text);color:var(--bg);border-radius:99px;padding:1px 8px}
+.side .foot{margin-top:auto;font-size:12px;opacity:.8;padding:10px}
+.sync{display:flex;align-items:center;gap:8px}
+.sync::before{content:"";width:8px;height:8px;border-radius:50%;background:#3a9a5b}
+
+/* main */
+main{padding:24px 28px;display:flex;flex-direction:column;gap:20px;min-width:0}
+.head{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.chip{font:44px/1 var(--serif);background:var(--sky);color:var(--on-accent);padding:4px 12px 6px;border-radius:10px}
+.head p{max-width:34ch;font-size:14px}
+.tabs{margin-left:auto;display:flex;border:var(--line);border-radius:14px;overflow:hidden;background:var(--surface)}
+.tabs button{border:0;background:none;padding:8px 14px}
+.tabs button+button{border-left:var(--line)}
+.tabs [aria-pressed=true]{background:var(--text);color:var(--bg);font-weight:600}
+
+.cols{display:grid;grid-template-columns:300px minmax(0,1fr) 320px;gap:20px;align-items:start}
+.card{background:var(--surface);border:var(--line);border-radius:var(--r);box-shadow:var(--lift)}
+
+/* queue */
+.queue{padding:10px;display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 140px);overflow:auto}
+.filter,.other{background:var(--surface);color:var(--text)}
+.filter::placeholder,.other::placeholder{color:var(--text);opacity:.7}
+.filter{border:var(--line);border-radius:12px;padding:8px 12px;font:inherit;width:100%;margin-bottom:4px}
+.item{border:2px solid transparent;border-radius:12px;padding:9px 11px;background:none;text-align:left}
+.item:hover{border-color:var(--edge)}
+.item[aria-current]{background:var(--sky);color:var(--on-accent);border:var(--line)}
+.item b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:600;font-size:14px;line-height:1.35}
+.item small{font-size:12px;opacity:.8}
+
+/* paper */
+.paper{padding:28px 32px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+.tag{border:var(--line);border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600}
+.tag.pdf{background:var(--sky);color:var(--on-accent)}
+.paper h1{font:400 40px/1.08 var(--serif);margin-bottom:10px;text-wrap:balance}
+.meta{font-size:14px;opacity:.8;margin-bottom:22px}
+.meta a{color:var(--text)}
+.label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;margin:18px 0 8px}
+.abstract{font:19px/1.55 var(--serif);max-width:62ch}
+
+/* decide */
+.decide{display:flex;flex-direction:column;gap:16px}
+.progress{padding:14px 16px}
+.progress .row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px}
+.bar{height:12px;border:var(--line);border-radius:99px;overflow:hidden;background:var(--surface)}
+.bar span{display:block;height:100%;width:1%;background:var(--orange);border-right:var(--line)}
+.keep{background:var(--sky);color:var(--on-accent);border:var(--line);border-radius:var(--r);box-shadow:var(--lift);padding:16px;text-align:left;display:flex;align-items:center;gap:12px;transition:transform .12s,box-shadow .12s}
+.keep:hover{transform:translateY(-2px);box-shadow:0 6px 0 var(--shadow)}
+.keep:active{transform:translateY(4px);box-shadow:0 0 0 var(--shadow)}
+.keep b{font:30px/1 var(--serif);font-weight:400}
+.keep small{display:block;font-size:12px}
+kbd{font:600 12px/1 var(--sans);border:var(--line);border-radius:6px;padding:3px 6px;background:var(--surface)}
+.keep kbd{margin-left:auto}
+.exclude{padding:14px}
+.exclude h2{font:26px/1 var(--serif);font-weight:400;display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.exclude h2 span{background:var(--coral);color:var(--on-accent);padding:0 8px 2px;border-radius:8px}
+.exclude p{font-size:12px;opacity:.8;margin-bottom:10px}
+.reason{display:flex;align-items:center;gap:10px;width:100%;border:2px solid transparent;background:none;border-radius:10px;padding:6px 8px;text-align:left;font-size:14px}
+.reason:hover{border-color:var(--edge);background:var(--coral-tint)}
+.reason kbd{min-width:22px;text-align:center}
+.other{border:var(--line);border-radius:10px;padding:7px 10px;font:inherit;font-size:14px;width:100%;margin-top:6px}
+.nav2{display:grid;grid-template-columns:1fr 2fr;gap:8px}
+.ghost{border:var(--line);background:var(--surface);border-radius:12px;padding:9px;font-weight:600}
+.fulltext{padding:14px 16px;display:flex;gap:14px;align-items:center}
+.fulltext img{width:64px;flex:none;background:var(--sky);border:var(--line);border-radius:12px;padding:4px}
+.fulltext b{display:block}
+.fulltext small{font-size:12px;opacity:.8}
+.hint{font-size:12px;opacity:.8;text-align:center}
+
+@media (max-width:1180px){.cols{grid-template-columns:1fr 300px}.queue{display:none}}
+@media (max-width:760px){.app{grid-template-columns:1fr}.side{display:none}.cols{grid-template-columns:1fr}main{padding:16px}.chip{font-size:34px}.tabs{margin-left:0}}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="side" aria-label="Sections">
+    <div class="brand">Sieve<i></i></div>
+    <button class="review"><b>Flip-top cap security systems</b><small>Systematic review · 165 records</small></button>
+    <button class="nav">Overview</button>
+    <button class="nav">Find papers</button>
+    <button class="nav">Library</button>
+    <p class="group">Review</p>
+    <button class="nav" aria-current="page">Screening <span class="count">165</span></button>
+    <button class="nav">Reader</button>
+    <button class="nav">Evidence</button>
+    <button class="nav">Map</button>
+    <button class="nav">Matrix</button>
+    <button class="nav">PRISMA</button>
+    <p class="group">Setup</p>
+    <button class="nav">Method</button>
+    <button class="nav">Tags <span class="count">14</span></button>
+    <button class="nav">Settings</button>
+    <div class="foot"><div class="sync">Saved and synced</div>Signed in · demo account<button class="theme" id="theme">Theme: auto</button></div>
+  </nav>
+
+  <main>
+    <div class="head">
+      <h1 class="chip">Screening</h1>
+      <p>Keep or exclude each record. Every exclusion needs a reason, so PRISMA counts itself.</p>
+      <div class="tabs" role="group">
+        <button aria-pressed="true">Title &amp; abstract · 165</button>
+        <button aria-pressed="false">Full text</button>
+        <button aria-pressed="false">Decided · 3</button>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="card queue">
+        <input class="filter" placeholder="Filter this list">
+        <button class="item" aria-current="true"><b>Stage-Complete Mapping of Pairwise Monocular Structure-from-Motion to FPGAs</b><small>Stamatakis P, Vourvoulakis J · 2026</small></button>
+        <button class="item"><b>Anterior insular co-activation patterns associated with stress markers in chronic pain</b><small>Häuselmann S et al. · 2026</small></button>
+        <button class="item"><b>NephroNet: a calibration-aware, patient-disjoint benchmark for multiclass kidney CT</b><small>Dong Y et al. · 2026</small></button>
+        <button class="item"><b>Dynamic Shape Modulation of Deflated and Adhered Lipid Vesicles</b><small>Wolfsberg G et al. · 2025</small></button>
+        <button class="item"><b>Fail-Closed Validation of Lineage-Associated Transcript-Count Diversity</b><small>Quiroz RN et al. · 2026</small></button>
+        <button class="item"><b>A Review of Wafer-Level Packaging Technology for SAW and BAW Filters</b><small>Liu X et al. · 2025</small></button>
+        <button class="item"><b>An optimized framework for simultaneous EEG-fMRI at 7T</b><small>Martinez CS et al. · 2025</small></button>
+      </div>
+
+      <article class="card paper">
+        <div class="tags"><span class="tag">New</span><span class="tag">Europe PMC</span><span class="tag pdf">PDF ready</span></div>
+        <h1>Stage-Complete Mapping of Pairwise Monocular Structure-from-Motion to Field-Programmable Gate Arrays</h1>
+        <p class="meta">Stamatakis P, Vourvoulakis J · 2026 · <a href="#">doi.org/10.3390/jimaging12090451</a></p>
+        <p class="label">Keywords</p>
+        <div class="tags"><span class="tag">FPGA</span><span class="tag">VCU118</span><span class="tag">structure from motion</span><span class="tag">monocular</span></div>
+        <p class="label">Abstract</p>
+        <p class="abstract">This paper presents a stage-complete programmable-logic architecture for pairwise monocular structure from motion using calibrated, pre-undistorted 1920 × 1080 video. It integrates streaming feature extraction, Block-RAM-backed Top-K selection, spatial-bucket matching, two-pass essential-matrix estimation and pruning, fixed-point pose recovery, and triangulation with point-coordinate output.</p>
+      </article>
+
+      <aside class="decide">
+        <div class="card progress">
+          <div class="row"><b>1 of 165</b><span>164 left</span></div>
+          <div class="bar"><span></span></div>
+        </div>
+        <button class="keep"><div><b>Keep</b><small>Move to full-text screening</small></div><kbd>F</kbd></button>
+        <div class="card exclude">
+          <h2><span>Exclude</span></h2>
+          <p>Pick a reason. PRISMA needs one for every exclusion.</p>
+          <button class="reason"><kbd>1</kbd>Wrong population</button>
+          <button class="reason"><kbd>2</kbd>Wrong intervention</button>
+          <button class="reason"><kbd>3</kbd>Wrong outcome</button>
+          <button class="reason"><kbd>4</kbd>Wrong study design</button>
+          <button class="reason"><kbd>5</kbd>Not peer reviewed</button>
+          <button class="reason"><kbd>6</kbd>Not in English</button>
+          <button class="reason"><kbd>7</kbd>Outside date range</button>
+          <button class="reason"><kbd>8</kbd>Duplicate</button>
+          <button class="reason"><kbd>9</kbd>Off topic</button>
+          <input class="other" placeholder="Other reason…">
+        </div>
+        <div class="nav2"><button class="ghost">← Back</button><button class="ghost">Skip <kbd>J</kbd></button></div>
+        <div class="card fulltext">
+          <img src="../brand/cat-clipboard-mono.svg" alt="">
+          <div><b>PDF checked</b><small>45 pages · 1.4 MB</small></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+<script>
+(()=>{const r=document.documentElement,b=document.getElementById('theme'),order=['auto','light','dark'];
+let t='auto';try{t=localStorage.getItem('sieve-theme')||'auto'}catch(e){}
+const set=v=>{t=v;v==='auto'?r.removeAttribute('data-theme'):r.setAttribute('data-theme',v);b.textContent='Theme: '+v;try{localStorage.setItem('sieve-theme',v)}catch(e){}};
+set(t);b.onclick=()=>set(order[(order.indexOf(t)+1)%3]);})();
+</script>
+</body>
+</html>

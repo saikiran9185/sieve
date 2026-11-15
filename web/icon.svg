@@ -1,19 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="115" fill="#1c2028"/>
-  <g>
-    <rect x="112" y="112" width="256" height="27" rx="13" fill="#F2C14E"/>
-    <rect x="152" y="153" width="256" height="27" rx="13" fill="#4CAF7D"/>
-    <rect x="121" y="194" width="256" height="27" rx="13" fill="#4C8DF2"/>
-    <rect x="176" y="235" width="256" height="27" rx="13" fill="#E86A9A"/>
+  <rect width="512" height="512" rx="115" fill="#A9D6FE"/>
+  <!-- the sieve: a bowl with a mesh, one orange grain getting through -->
+  <path d="M104 196h304a152 152 0 0 1-304 0z" fill="#FFFFFF" stroke="#302C28" stroke-width="20" stroke-linejoin="round"/>
+  <path d="M84 196h344" stroke="#302C28" stroke-width="20" stroke-linecap="round"/>
+  <g fill="#302C28">
+    <circle cx="196" cy="246" r="11"/><circle cx="256" cy="246" r="11"/><circle cx="316" cy="246" r="11"/>
+    <circle cx="226" cy="292" r="11"/><circle cx="286" cy="292" r="11"/>
   </g>
-  <rect x="102" y="289" width="308" height="18" rx="9" fill="#ffffff" opacity="0.92"/>
-  <g fill="#1c2028">
-    <rect x="117" y="292" width="27" height="12"/><rect x="161" y="292" width="27" height="12"/>
-    <rect x="205" y="292" width="27" height="12"/><rect x="249" y="292" width="27" height="12"/>
-    <rect x="293" y="292" width="27" height="12"/><rect x="337" y="292" width="27" height="12"/>
-  </g>
-  <g>
-    <rect x="140" y="340" width="232" height="27" rx="13" fill="#F2C14E"/>
-    <rect x="140" y="382" width="232" height="27" rx="13" fill="#4CAF7D"/>
-  </g>
+  <circle cx="256" cy="420" r="24" fill="#F58B23"/>
 </svg>

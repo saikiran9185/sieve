@@ -1,13 +1,18 @@
 {
-  "name": "Sieve — research workspace",
+  "name": "Sieve",
   "short_name": "Sieve",
-  "description": "Read, highlight and organise research. Everything stays in your browser.",
+  "description": "Research you can Trust. Find, screen, read and report a literature review with every decision traced to its source.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
-  "background_color": "#1c2028",
-  "theme_color": "#1c2028",
+  "background_color": "#FFFFFF",
+  "theme_color": "#FFFFFF",
   "icons": [
-    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }

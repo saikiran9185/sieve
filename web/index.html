@@ -4,24 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sieve</title>
-<meta name="description" content="A provenance-first research workspace. Runs in your browser; your library never leaves it.">
+<meta name="description" content="Sieve: research you can Trust. Find, screen, read and report a literature review with every decision traced to its source.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#1c2028">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1E1B19" media="(prefers-color-scheme: dark)">
+<script>try{var t=localStorage.getItem("sieve-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="auth.css">
 </head>
 <body>
 <div id="app">
-  <nav id="sidebar">
+  <nav id="sidebar" aria-label="Sieve">
+    <div class="brandline"><span class="wordmark">Sieve<i></i></span><button id="drawerClose" class="icon" aria-label="Close menu" data-icon="close"></button></div>
     <header>
       <button id="projectPicker" class="project" title="Switch review, or start a new one">
         <span class="project-line">
           <span id="projectName">Review</span>
-          <span class="chev" aria-hidden="true">&#9662;</span>
+          <span class="chev" aria-hidden="true" data-icon="chevronsUpDown"></span>
         </span>
         <span id="projectMeta" class="meta"></span>
       </button>
     </header>
+    <button id="paletteBtn" class="search-btn" aria-label="Search papers, screens and actions"><span data-icon="search"></span><span>Search</span><kbd>⌘K</kbd></button>
 
     <div id="navlist">
       <button class="nav" data-view="overview" aria-current="true">Overview</button>
@@ -48,7 +53,10 @@
         <span id="methodName">Choose a method</span>
         <span id="methodStep" class="meta"></span>
       </button>
+      <button id="accountBtn" class="quiet" title="Account, backup and sync">Account</button>
+      <button id="syncLine" class="sync-line" hidden><span class="dot"></span><span></span></button>
       <button id="addBtn" class="primary">Add PDFs or citations</button>
+      <button id="themeBtn" class="quiet theme-toggle" aria-label="Switch colour theme">Theme: auto</button>
       <div class="row">
         <button id="exportBtn" class="quiet">Back up</button>
         <button id="importBtn" class="quiet">Restore</button>
@@ -61,8 +69,16 @@
     </footer>
   </nav>
 
+  <div class="scrim" id="scrim"></div>
   <main>
-    <section id="overview" class="view"></section>
+    <header id="pagehead">
+      <button id="menuBtn" class="icon" aria-label="Open menu" data-icon="menu"></button>
+      <h1 id="pageTitle">Overview</h1>
+      <span id="pageSub"></span>
+    </header>
+    <section id="overview" class="view">
+      <div class="ov skeleton" aria-hidden="true"><div class="sk sk-line" style="width:48%"></div><div class="sk sk-stats"></div><div class="sk sk-line" style="width:30%"></div><div class="sk sk-row"></div><div class="sk sk-row"></div></div>
+    </section>
     <section id="find" class="view hidden"></section>
     <section id="library" class="view hidden">
       <div class="bar">
@@ -81,7 +97,7 @@
         <aside id="paperRail" class="rail">
           <div class="rail-head">
             <span class="section-label">Papers</span>
-            <button id="railHide" class="icon" title="Hide the paper list" aria-label="Hide the paper list">&#8676;</button>
+            <button id="railHide" class="icon" title="Hide the paper list" aria-label="Hide the paper list" data-icon="panelLeft"></button>
           </div>
           <div class="rail-controls">
             <select id="railFilter" aria-label="Which papers to list">
@@ -98,7 +114,7 @@
 
         <div class="reader-main">
           <div class="bar" id="readerBar">
-            <button id="railShow" class="icon hidden" title="Show the paper list" aria-label="Show the paper list">&#8677;</button>
+            <button id="railShow" class="icon hidden" title="Show the paper list" aria-label="Show the paper list" data-icon="panelLeft"></button>
             <span class="titleblock">
               <strong id="readerTitle">No paper open</strong>
               <span id="readerByline" class="meta"></span>
@@ -106,11 +122,11 @@
             <span class="grow"></span>
             <input id="findText" type="search" placeholder="Find in document" aria-label="Find in document">
             <span id="findCount" class="meta tabular"></span>
-            <button id="findPrev" class="icon" aria-label="Previous match">&#8963;</button>
-            <button id="findNext" class="icon" aria-label="Next match">&#8964;</button>
+            <button id="findPrev" class="icon" aria-label="Previous match" data-icon="chevronUp"></button>
+            <button id="findNext" class="icon" aria-label="Next match" data-icon="chevronDown"></button>
             <span class="sep"></span>
-            <button id="zoomOut" class="icon" aria-label="Zoom out">&minus;</button>
-            <button id="zoomIn" class="icon" aria-label="Zoom in">+</button>
+            <button id="zoomOut" class="icon" aria-label="Zoom out" data-icon="minus"></button>
+            <button id="zoomIn" class="icon" aria-label="Zoom in" data-icon="plus"></button>
             <span id="pageLabel" class="meta tabular"></span>
           </div>
 
@@ -166,12 +182,22 @@
   </main>
 </div>
 
+<nav id="tabbar" aria-label="Main sections">
+  <button data-go="overview" aria-label="Overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4v-5h-6v5H5a1 1 0 0 1-1-1z"/></svg>Home</button>
+  <button data-go="find" aria-label="Find papers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg>Find</button>
+  <button data-go="screening" aria-label="Screening"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16l-6 7.5V19l-4-2v-4.5z"/></svg>Screen</button>
+  <button data-go="reader" aria-label="Reader"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5zM12 6.5v13"/></svg>Read</button>
+  <button data-go="more" aria-label="More sections"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg>More</button>
+</nav>
 <div id="drop" class="drop hidden"><div>Drop PDFs, or a .bib / .ris file</div></div>
 <div id="toast" class="toast hidden"></div>
 <div id="modal" class="modal hidden"><div class="sheet" id="modalBody"></div></div>
 <input id="fileInput" type="file" accept="application/pdf,.pdf,.bib,.ris,.txt" multiple hidden>
 <input id="jsonInput" type="file" accept="application/json,.json,application/zip,.zip" hidden>
 
+<script src="vendor/supabase.js"></script>
+<script src="supabase-config.js"></script>
 <script type="module" src="app.js"></script>
+<script type="module" src="shell.js"></script>
 </body>
 </html>

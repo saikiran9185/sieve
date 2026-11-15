@@ -19,8 +19,7 @@ export function render(ctx, root) {
   const wrap = el('div', 'list prose');
 
   const head = el('div');
-  head.appendChild(el('h2', null, 'Method'));
-  head.appendChild(el('p', 'meta',
+  head.appendChild(el('p', 'note',
     'How you work on this review. Steps are a guide, never a gate — every part of Sieve stays reachable whatever method you pick.'));
   wrap.appendChild(head);
 

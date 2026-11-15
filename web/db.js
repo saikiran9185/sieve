@@ -118,13 +118,45 @@ async function tx(store, mode, fn) {
     const s = t.objectStore(store);
     let out;
     try { out = fn(s); } catch (err) { reject(err); return; }
-    t.oncomplete = () => resolve(out && out.result !== undefined ? out.result : out);
+    // Every caller hands back an IDBRequest; its result is the answer. (This used to fall
+    // back to the request itself when the result was undefined, so a lookup for a missing
+    // record returned a truthy object instead of undefined.)
+    t.oncomplete = () => resolve(out instanceof IDBRequest ? out.result : out);
     t.onerror = () => reject(t.error);
   });
 }
 
-export const put = (store, value) => tx(store, 'readwrite', s => s.put(value));
-export const del = (store, key) => tx(store, 'readwrite', s => s.delete(key));
+// Stores whose records get a numeric id. New ids are made here rather than by IndexedDB's
+// counter, because two devices on one account would otherwise both hand out id 7 for
+// different papers and overwrite each other when they sync. A millisecond clock plus a
+// per-device salt, kept strictly increasing, is unique enough and still sorts by age.
+const NUMBERED = new Set(['projects', 'sources', 'evidence', 'tags', 'columns', 'frames',
+                          'axes', 'searchRuns', 'methods', 'aiEvents']);
+const SALT = Math.floor(Math.random() * 1000);
+let lastId = 0;
+export function newId() {
+  const id = Math.max(lastId + 1, Date.now() * 1000 + SALT);
+  lastId = id;
+  return id;
+}
+
+/// Sync (sync.js) listens here for every local change. Writes that come *from* sync use
+/// rawPut/rawDel so they are not echoed back to the server.
+let writeHook = null;
+export function onWrite(fn) { writeHook = fn; }
+
+export async function put(store, value) {
+  if (NUMBERED.has(store) && value && value.id == null) value.id = newId();
+  const key = await tx(store, 'readwrite', s => s.put(value));
+  try { writeHook?.(store, key, value); } catch (err) { console.warn('sync hook', err); }
+  return key;
+}
+export async function del(store, key) {
+  await tx(store, 'readwrite', s => s.delete(key));
+  try { writeHook?.(store, key, null); } catch (err) { console.warn('sync hook', err); }
+}
+export const rawPut = (store, value) => tx(store, 'readwrite', s => s.put(value));
+export const rawDel = (store, key) => tx(store, 'readwrite', s => s.delete(key));
 export const get = (store, key) => tx(store, 'readonly', s => s.get(key));
 export const all = (store) => tx(store, 'readonly', s => s.getAll());
 

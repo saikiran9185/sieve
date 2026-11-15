@@ -96,8 +96,7 @@ export function render(ctx, root) {
   const wrap = el('div', 'list prose');
 
   const head = el('div');
-  head.appendChild(el('h2', null, 'How to use Sieve'));
-  head.appendChild(el('p', 'meta',
+  head.appendChild(el('p', 'note',
     'A literature review, end to end, in the order you would actually do it. Nothing here is compulsory — every screen works on its own.'));
   wrap.appendChild(head);
 

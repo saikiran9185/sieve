@@ -4,12 +4,14 @@
 // on the first visit, so a fix ships and nobody receives it. This tries the network first and
 // falls back to the cache, which keeps the app fully usable with no connection while making
 // sure a newer version is picked up the moment there is one.
-const CACHE = 'sieve-v7';
+const CACHE = 'sieve-v12';
 const ASSETS = [
   './', './index.html', './app.css', './app.js', './db.js', './reader.js',
   './storage.js', './search.js', './views.js', './inspector.js', './method.js',
   './map.js', './trail.js', './guide.js', './exports.js', './citations.js',
-  './retrieve.js', './zip.js', './icon.svg', './manifest.webmanifest',
+  './retrieve.js', './zip.js', './shell.js', './sync.js', './icons.js', './extras.js', './auth.js', './auth.css', './supabase-config.js',
+  './vendor/supabase.js', './fonts/instrument-serif-400.woff2', './fonts/public-sans-400.woff2',
+  './fonts/public-sans-600.woff2', './img/cat-find.png', './img/cat-wave.png', './img/cat-clipboard.svg', './icon.svg', './manifest.webmanifest',
   './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs',
 ];
 
@@ -26,8 +28,12 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  // `no-cache` makes the browser revalidate with the server instead of trusting its own
+  // HTTP cache, which otherwise serves a stale db.js next to a fresh app.js after an update
+  // and the app fails to start. Navigations keep their own request (their mode can't be copied).
+  const fresh = req.mode === 'navigate' ? req : new Request(req, { cache: 'no-cache' });
   e.respondWith(
-    fetch(req)
+    fetch(fresh)
       .then(res => {
         // Keep the cache current so the next offline visit gets the newest version.
         const copy = res.clone();

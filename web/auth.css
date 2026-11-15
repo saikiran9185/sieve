@@ -1,0 +1,85 @@
+/* Sign-in screen. Values come from the approved Figma frame "Sign in" (2:84) and its variables:
+   color/sky #A9D6FE · color/orange #F58B23 · color/ink #302C28 · color/slate #605A66 ·
+   Display/H2 Instrument Serif 56 · Body/Small + UI/Label Public Sans 14 · UI/Button 16.
+   The fonts ship with the app so the screen looks right offline too. */
+
+@font-face { font-family: "Instrument Serif"; font-weight: 400; font-display: swap;
+  src: url("fonts/instrument-serif-400.woff2") format("woff2"); }
+@font-face { font-family: "Public Sans"; font-weight: 400; font-display: swap;
+  src: url("fonts/public-sans-400.woff2") format("woff2"); }
+@font-face { font-family: "Public Sans"; font-weight: 600; font-display: swap;
+  src: url("fonts/public-sans-600.woff2") format("woff2"); }
+
+#auth {
+  --sky: #a9d6fe; --orange: #f58b23; --ink: #302c28; --slate: #605a66; --paper: #ffffff;
+  --rose: #a8322b;
+  position: fixed; inset: 0; z-index: 100; overflow-y: auto;
+  background: var(--sky); color: var(--ink);
+  font: 400 14px/1.5 "Public Sans", system-ui, sans-serif;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0 16px 48px;
+}
+#auth[hidden] { display: none; }
+
+.auth-top { align-self: stretch; height: 78px; display: flex; align-items: center; padding-left: 24px; }
+.auth-logo { font: 400 34px/1 "Instrument Serif", Georgia, serif; }
+
+.auth-card {
+  width: 100%; max-width: 440px; margin-top: 70px;
+  background: var(--paper); border: 1.5px solid var(--ink);
+  padding: 37px 41px 38px;
+  display: flex; flex-direction: column;
+}
+.auth-title {
+  font: 400 56px/1.02 "Instrument Serif", Georgia, serif;
+  margin: 0 0 18px; letter-spacing: 0; color: var(--ink);
+}
+.auth-explain { margin: 0 0 18px; color: var(--slate); }
+
+.auth-label { font-weight: 600; margin: 0 0 8px; }
+.auth-input {
+  height: 53px; padding: 0 15px; margin: 0 0 18px;
+  font: 400 16px/1.5 "Public Sans", system-ui, sans-serif; color: var(--ink);
+  background: var(--paper); border: 1.5px solid var(--ink); border-radius: 0;
+}
+.auth-input::placeholder { color: #8a8590; }
+.auth-input:focus-visible { outline: 3px solid var(--orange); outline-offset: 2px; }
+
+.auth-btn {
+  height: 49px; margin: 0 0 18px; border-radius: 0; cursor: pointer;
+  font: 600 16px/1 "Public Sans", system-ui, sans-serif; color: var(--ink);
+  background: var(--paper); border: 1.5px solid var(--ink);
+  transition: transform 120ms ease-out, background-color 120ms ease-out;
+}
+.auth-btn:hover { background: #f4f9ff; border-color: var(--ink); }
+.auth-btn:active { transform: translateY(1px); }
+.auth-btn:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+.auth-primary { background: var(--orange); }
+.auth-primary:hover { background: #f79a3e; }
+.auth-btn:disabled { opacity: .6; cursor: progress; }
+
+.auth-status { margin: -4px 0 16px; color: var(--slate); }
+.auth-status.bad { color: var(--rose); }
+
+.auth-links { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 0 0 18px; }
+.auth-link, .auth-guest {
+  padding: 0; border: 0; background: none; cursor: pointer; color: var(--ink);
+  font: 600 14px/1.4 "Public Sans", system-ui, sans-serif; text-align: left;
+}
+.auth-link:hover { text-decoration: underline; }
+.auth-guest { font-weight: 400; text-decoration: underline; text-underline-offset: 3px; align-self: flex-start; }
+.auth-link:focus-visible, .auth-guest:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+
+@media (max-width: 520px) {
+  .auth-top { padding-left: 4px; }
+  .auth-card { margin-top: 24px; padding: 28px 22px; }
+  .auth-title { font-size: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .auth-btn { transition: none; } }
+
+/* Account button in the sidebar and the account sheet (uses the app's existing tokens). */
+#accountBtn { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; }
+#accountBtn .acct-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.acct-rows { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 12px 0 18px; }
+.acct-rows dt { color: var(--dim); }
+.acct-rows dd { margin: 0; }

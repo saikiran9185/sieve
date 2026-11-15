@@ -14,7 +14,7 @@ export const el = (tag, cls, text) => {
 };
 export const chip = (text, color) => {
   const c = el('span', 'chip', text);
-  if (color) c.style.color = color;
+  if (color) c.style.setProperty('--c', color);
   return c;
 };
 
@@ -24,20 +24,43 @@ export function renderOverview(ctx, root) {
   const { state, go } = ctx;
   const p = prismaCounts(state);
   root.innerHTML = '';
-  const wrap = el('div', 'list');
+  const wrap = el('div', 'ov');
 
+  // The question is the reason the review exists, so it leads the page.
   const head = el('div');
-  head.appendChild(el('h2', null, state.project?.name || 'Review'));
   if (state.project?.question) {
-    const q = el('p', 'abstract', state.project.question);
-    q.style.margin = '4px 0 0';
-    head.appendChild(q);
+    head.appendChild(el('p', 'ov-question', state.project.question));
   } else {
-    const b = el('button', 'quiet', 'Write your review question →');
+    const b = el('button', 'quiet ov-question-empty', 'Write your review question →');
     b.onclick = () => go('settings');
     head.appendChild(b);
   }
   wrap.appendChild(head);
+
+  if (!state.sources.length) {
+    const start = el('div', 'ov-start');
+    const pic = el('div', 'illus');
+    const img = el('img'); img.src = 'img/cat-find.png'; img.alt = '';
+    pic.appendChild(img);
+    start.appendChild(pic);
+    const body = el('div');
+    body.appendChild(el('h2', null, 'Start with the papers'));
+    body.appendChild(el('p', null, 'Search seven databases at once, or drop the PDFs and .bib files you already have anywhere on this page.'));
+    const actions = el('div', 'actions');
+    const find = el('button', 'primary', 'Find papers');
+    find.onclick = () => go('find');
+    const add = el('button', 'quiet', 'Add PDFs or citations');
+    add.onclick = () => document.getElementById('addBtn')?.click();
+    const sample = el('button', 'quiet', 'Try an example search');
+    sample.title = 'Runs a real search for “sustainable packaging consumer behaviour” across the free databases';
+    sample.onclick = () => { presetSearch('sustainable packaging consumer behaviour'); go('find'); };
+    actions.append(find, add, sample);
+    body.appendChild(actions);
+    start.appendChild(body);
+    wrap.appendChild(start);
+    root.appendChild(wrap);
+    return;
+  }
 
   const stats = el('div', 'stats');
   const add = (n, label, view) => {
@@ -53,41 +76,73 @@ export function renderOverview(ctx, root) {
   add(state.evidence.length, 'Highlights', 'evidence');
   add(p.included, 'Included', 'prisma');
   wrap.appendChild(stats);
+  countUp([...stats.querySelectorAll('b')]);
+
+  // Where every record stands, as one bar. It reads as the PRISMA flow in miniature.
+  const parts = [
+    ['Included', p.included, 'var(--sky)'],
+    ['Full text in progress', Math.max(0, p.sought - p.included - p.excludedFullText - p.notRetrieved), 'var(--orange)'],
+    ['Excluded', p.excludedScreening + p.excludedFullText, 'var(--coral)'],
+    ['To screen', p.toScreen, 'var(--line-strong)'],
+    ['Duplicates', p.duplicates, 'var(--line)'],
+  ].filter(x => x[1] > 0);
+  const total = parts.reduce((a, x) => a + x[1], 0);
+  if (total) {
+    const sec = el('div', 'ov-section');
+    sec.appendChild(el('h3', null, 'Where every record stands'));
+    const bar = el('div', 'funnel');
+    bar.setAttribute('role', 'img');
+    bar.setAttribute('aria-label', parts.map(x => `${x[0]} ${x[1]}`).join(', '));
+    for (const [, n, c] of parts) {
+      const s = el('span'); s.style.flex = String(n); s.style.background = c; bar.appendChild(s);
+    }
+    sec.appendChild(bar);
+    const key = el('div', 'funnel-key');
+    for (const [label, n, c] of parts) key.appendChild(chip(`${label} ${n}`, c));
+    sec.appendChild(key);
+    wrap.appendChild(sec);
+  }
 
   const gaps = findGaps(state, p);
+  const sec = el('div', 'ov-section');
+  sec.appendChild(el('h3', null, gaps.length ? 'What needs attention' : 'Nothing outstanding'));
   if (gaps.length) {
-    wrap.appendChild(el('h3', 'meta', 'What needs attention'));
     for (const g of gaps) {
-      const card = el('button', 'card gap');
-      card.style.cssText += 'width:100%;text-align:left;cursor:pointer';
+      const row = el('button', 'card gap');
       const n = el('div', 'n', String(g.count));
-      n.style.color = g.color;
-      card.appendChild(n);
+      n.style.setProperty('--c', g.color);
+      row.appendChild(n);
       const body = el('div');
       body.appendChild(el('h4', null, g.title));
       body.appendChild(el('div', 'meta', g.detail));
-      card.appendChild(body);
-      card.onclick = () => go(g.view);
-      wrap.appendChild(card);
+      row.appendChild(body);
+      row.appendChild(el('span', 'go', '→'));
+      row.onclick = () => go(g.view);
+      sec.appendChild(row);
     }
-  } else if (state.sources.length) {
-    const ok = el('div', 'card');
-    ok.appendChild(el('h4', null, 'Nothing outstanding'));
-    ok.appendChild(el('div', 'meta', 'Every record is screened and every included paper has a full text.'));
-    wrap.appendChild(ok);
+  } else {
+    sec.appendChild(el('p', 'note', 'Every record is screened and every included paper has a full text.'));
   }
-
-  if (!state.sources.length) {
-    const empty = el('div', 'card');
-    empty.appendChild(el('h4', null, 'Start by finding papers'));
-    empty.appendChild(el('div', 'meta', 'Search seven databases at once, or drop PDFs you already have anywhere on this page.'));
-    const b = el('button', 'primary', 'Find papers');
-    b.style.marginTop = '9px';
-    b.onclick = () => go('find');
-    empty.appendChild(b);
-    wrap.appendChild(empty);
-  }
+  wrap.appendChild(sec);
   root.appendChild(wrap);
+}
+
+const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+// The overview's numbers count up the first time they are shown in a visit, so a returning
+// researcher sees the review's size arrive rather than just sit there.
+let counted = false;
+function countUp(nodes) {
+  if (counted || reducedMotion()) { counted = true; return; }
+  counted = true;
+  const start = performance.now(), ms = 600;
+  const targets = nodes.map(n => Number(n.textContent) || 0);
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / ms), e = 1 - Math.pow(1 - k, 3);
+    nodes.forEach((n, i) => { n.textContent = String(Math.round(targets[i] * e)); });
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 function findGaps(state, p) {
@@ -160,8 +215,7 @@ export function renderPrisma(ctx, root) {
 
   const list = el('div', 'list');
   if (p.toScreen) {
-    const warn = el('div', 'card');
-    warn.style.borderColor = 'var(--amber)';
+    const warn = el('div', 'callout warn');
     warn.appendChild(el('h4', null, `${p.toScreen} records have no decision yet`));
     warn.appendChild(el('div', 'meta', 'They count as identified but appear in no box below, so this diagram is not final.'));
     list.appendChild(warn);
@@ -233,11 +287,17 @@ export function prismaText(state, p) {
 let searchState = { query: '', results: [], progress: {}, running: false, selected: new Set(),
                     enabled: new Set(PROVIDERS.map(p => p.name)) };
 
+/// Fills the search box and runs it the next time Find opens (the overview's example search).
+export function presetSearch(query) {
+  searchState.query = query;
+  searchState.autorun = true;
+}
+
 export function renderFind(ctx, root) {
   const { state, addFromHits } = ctx;
   root.innerHTML = '';
 
-  const bar = el('div', 'bar');
+  const bar = el('div', 'bar find-bar');
   const input = el('input');
   input.type = 'search';
   input.placeholder = 'Search terms — e.g. cosmetic packaging sustainability';
@@ -285,6 +345,10 @@ export function renderFind(ctx, root) {
   const list = el('div', 'list');
   if (!searchState.results.length && !searchState.running) {
     const e = el('div', 'empty');
+    const pic = el('div', 'illus');
+    const img = el('img'); img.src = 'img/cat-find.png'; img.alt = '';
+    pic.appendChild(img);
+    e.appendChild(pic);
     e.appendChild(el('h2', null, 'Seven databases, one query'));
     e.appendChild(el('p', null, 'OpenAlex, Crossref, Europe PMC, PubMed, DOAJ, PLOS and OpenAIRE at the same time. Records describing the same paper are merged, so you screen each paper once. Free PDFs are linked where they legally exist.'));
     const also = el('p', null, 'Google Scholar, Scopus, Web of Science and the publishers cannot be queried from any browser. Sieve opens your search there and takes the .bib or .ris you export back.');
@@ -294,8 +358,7 @@ export function renderFind(ctx, root) {
     e.appendChild(b);
     list.appendChild(e);
   } else {
-    const head = el('div', 'bar');
-    head.style.borderBottom = '0';
+    const head = el('div', 'list-head');
     head.appendChild(el('span', 'meta', `${searchState.results.length} unique papers`));
     head.appendChild(el('span', 'grow'));
     const add = el('button', 'primary', 'Add to review');
@@ -336,11 +399,9 @@ export function renderFind(ctx, root) {
       const key = dedupeKey(r);
       const already = have.has(key);
       const card = el('div', 'card');
-      const top = el('div');
-      top.style.cssText = 'display:flex;gap:9px;align-items:flex-start';
+      const top = el('label', 'hit');
       const box = el('input');
       box.type = 'checkbox';
-      box.style.marginTop = '3px';
       box.checked = searchState.selected.has(key);
       box.disabled = already;
       box.dataset.key = key;
@@ -356,11 +417,11 @@ export function renderFind(ctx, root) {
       body.appendChild(el('div', 'meta',
         [r.authors.slice(0, 3).join(', ') || 'Unknown author', r.year, r.venue].filter(Boolean).join(' · ')));
       const chips = el('div', 'chips');
-      chips.appendChild(chip(r.provider, 'var(--accent)'));
+      chips.appendChild(chip(r.provider, 'var(--sky)'));
       for (const a of r.alsoFrom || []) chips.appendChild(chip(a, 'var(--faint)'));
       if (r.pdfURL) chips.appendChild(chip('free PDF', 'var(--emerald)'));
       if (r.citedBy) chips.appendChild(chip(`${r.citedBy} citations`, 'var(--faint)'));
-      for (const g of r.sdgs || []) chips.appendChild(chip(g, 'var(--accent)'));
+      for (const g of r.sdgs || []) chips.appendChild(chip(g, 'var(--sky)'));
       if (already) chips.appendChild(chip('already in review', 'var(--amber)'));
       body.appendChild(chips);
       if (r.abstract) {
@@ -376,6 +437,8 @@ export function renderFind(ctx, root) {
     syncSelection();
   }
   root.appendChild(list);
+
+  if (searchState.autorun) { searchState.autorun = false; setTimeout(run, 0); }
 
   async function run() {
     searchState.query = input.value.trim();
@@ -453,23 +516,48 @@ export function renderScreening(ctx, root) {
   const paper = queue[screenState.index];
   root.innerHTML = '';
 
-  const bar = el('div', 'bar');
-  for (const [key, label] of [['toScreen', 'Title & abstract'], ['fullText', 'Full text'], ['decided', 'Decided']]) {
-    const b = el('button', 'quiet', `${label} (${queues[key].length})`);
-    if (screenState.mode === key) { b.style.borderColor = 'var(--accent)'; b.style.color = 'var(--accent)'; }
+  const bar = el('div', 'bar screen-bar');
+  const seg = el('div', 'segmented');
+  seg.setAttribute('role', 'group');
+  seg.setAttribute('aria-label', 'Screening stage');
+  for (const [key, label] of [['toScreen', 'Title and abstract'], ['fullText', 'Full text'], ['decided', 'Decided']]) {
+    const b = el('button', 'seg', label);
+    b.appendChild(el('span', 'n', String(queues[key].length)));
+    b.setAttribute('aria-pressed', String(screenState.mode === key));
     b.onclick = () => { screenState.mode = key; screenState.index = 0; renderScreening(ctx, root); };
-    bar.appendChild(b);
+    seg.appendChild(b);
   }
+  bar.appendChild(seg);
   bar.appendChild(el('span', 'grow'));
-  if (queue.length) bar.appendChild(el('span', 'meta', `${screenState.index + 1} of ${queue.length}`));
+  if (queue.length) {
+    const prog = el('div', 'progress');
+    prog.appendChild(el('span', 'tabular', `${screenState.index + 1} of ${queue.length}`));
+    const track = el('span', 'track');
+    const fill = el('span');
+    fill.style.width = `${Math.max(2, ((screenState.index + 1) / queue.length) * 100)}%`;
+    track.appendChild(fill);
+    prog.appendChild(track);
+    bar.appendChild(prog);
+  }
   root.appendChild(bar);
 
   if (!paper) {
     const e = el('div', 'empty');
-    e.appendChild(el('h2', null, screenState.mode === 'decided' ? 'Nothing decided yet' : 'Nothing waiting'));
+    const pic = el('div', 'illus');
+    const img = el('img'); img.src = 'img/cat-wave.png'; img.alt = '';
+    pic.appendChild(img);
+    e.appendChild(pic);
+    e.appendChild(el('h2', null, screenState.mode === 'decided' ? 'Nothing decided yet'
+      : screenState.mode === 'toScreen' && state.sources.length ? 'All screened' : 'Nothing waiting'));
     e.appendChild(el('p', null, screenState.mode === 'toScreen'
-      ? 'Every record has a decision. Anything you kept is under Full text.'
+      ? (state.sources.length ? 'Every record has a decision. Anything you kept is under Full text.'
+                              : 'Find papers or add your own, and they will queue up here.')
       : 'Decisions you make appear here and can always be changed.'));
+    if (!state.sources.length) {
+      const b = el('button', 'primary', 'Find papers');
+      b.onclick = () => go('find');
+      e.appendChild(b);
+    }
     root.appendChild(e);
     return;
   }
@@ -477,109 +565,113 @@ export function renderScreening(ctx, root) {
   const wrap = el('div', 'screen-wrap');
 
   const q = el('div', 'screen-queue');
+  q.setAttribute('aria-label', 'Records in this queue');
   queue.forEach((s, i) => {
     const item = el('div', 'queue-item');
+    item.tabIndex = 0;
     item.setAttribute('aria-current', String(i === screenState.index));
     item.appendChild(el('h5', null, s.title));
     item.appendChild(el('div', 'meta', [s.authors?.[0], s.year].filter(Boolean).join(' · ')));
     if (screenState.mode === 'decided') item.appendChild(chip(db.STAGES[s.stage]?.label || s.stage, db.STAGES[s.stage]?.color));
     item.onclick = () => { screenState.index = i; renderScreening(ctx, root); };
+    item.onkeydown = (e) => { if (e.key === 'Enter') item.onclick(); };
     q.appendChild(item);
   });
   wrap.appendChild(q);
+  // Keep the current record in view when the queue is long.
+  requestAnimationFrame(() => q.querySelector('[aria-current="true"]')?.scrollIntoView({ block: 'nearest' }));
 
-  const body = el('div', 'screen-body');
+  const body = el('article', 'screen-body');
   const chips = el('div', 'chips');
   chips.appendChild(chip(db.STAGES[paper.stage]?.label || paper.stage, db.STAGES[paper.stage]?.color));
-  if (paper.provider) chips.appendChild(chip(paper.provider, 'var(--faint)'));
+  if (paper.provider) chips.appendChild(chip(paper.provider, 'var(--line-strong)'));
   if (paper.hasFile) chips.appendChild(chip('PDF ready', 'var(--emerald)'));
-  for (const g of paper.sdgs || []) chips.appendChild(chip(g, 'var(--accent)'));
+  for (const g of paper.sdgs || []) chips.appendChild(chip(g, 'var(--sky)'));
   body.appendChild(chips);
-  const h = el('h2', null, paper.title);
-  h.style.margin = '8px 0 3px';
-  body.appendChild(h);
-  body.appendChild(el('div', 'meta',
+  body.appendChild(el('h2', null, paper.title));
+  body.appendChild(el('p', 'byline',
     [paper.authors?.join(', '), paper.year, paper.venue].filter(Boolean).join(' · ')));
 
   const inc = state.project?.inclusion || '';
   const exc = state.project?.exclusion || '';
   if (inc || exc) {
-    const crit = el('div', 'chips');
-    crit.style.marginTop = '10px';
-    if (inc) { const c = el('div', 'card'); c.style.flex = '1';
-      c.appendChild(el('div', 'meta', 'INCLUDE IF')); c.appendChild(el('div', null, inc)); crit.appendChild(c); }
-    if (exc) { const c = el('div', 'card'); c.style.flex = '1';
-      c.appendChild(el('div', 'meta', 'EXCLUDE IF')); c.appendChild(el('div', null, exc)); crit.appendChild(c); }
+    const crit = el('div', 'criteria');
+    const add = (label, text, color) => {
+      const c = el('div');
+      const k = el('div', 'k', label); k.style.setProperty('--c', color);
+      c.append(k, el('div', null, text));
+      crit.appendChild(c);
+    };
+    if (inc) add('Include if', inc, 'var(--emerald)');
+    if (exc) add('Exclude if', exc, 'var(--coral)');
     body.appendChild(crit);
   }
 
-  const abs = el('div');
-  abs.style.marginTop = '14px';
-  abs.appendChild(el('div', 'meta', 'ABSTRACT'));
+  body.appendChild(el('span', 'label-sm', 'Abstract'));
   if (paper.abstract) {
     const p = el('p', 'abstract');
     // Criteria words tinted inside the abstract, the way Rayyan does it: a screening
     // decision usually turns on two or three words and finding them is the slow part.
     p.innerHTML = highlightCriteria(paper.abstract, inc, exc);
-    abs.appendChild(p);
+    body.appendChild(p);
     const hits = countTerms(paper.abstract, inc), misses = countTerms(paper.abstract, exc);
     const c = el('div', 'chips');
     if (hits) c.appendChild(chip(`${hits} include terms`, 'var(--emerald)'));
-    if (misses) c.appendChild(chip(`${misses} exclude terms`, 'var(--rose)'));
-    if (!hits && !misses && (inc || exc)) c.appendChild(chip('no criteria words found', 'var(--faint)'));
-    abs.appendChild(c);
+    if (misses) c.appendChild(chip(`${misses} exclude terms`, 'var(--coral)'));
+    if (!hits && !misses && (inc || exc)) c.appendChild(chip('No criteria words found', 'var(--line-strong)'));
+    if (c.childNodes.length) { c.style.marginTop = '16px'; body.appendChild(c); }
   } else {
-    abs.appendChild(el('p', 'hint', 'No abstract came with this record.'));
+    body.appendChild(el('p', 'note', 'No abstract came with this record.'));
   }
-  body.appendChild(abs);
 
   if (paper.conclusion) {
     const d = el('details');
-    d.style.marginTop = '14px';
     d.open = true;
     d.appendChild(el('summary', 'meta',
-      paper.conclusionHeading ? `THE PAPER'S ${paper.conclusionHeading.toUpperCase()} — READ FROM THE PDF`
-                              : 'CLOSING PARAGRAPHS — READ FROM THE PDF'));
-    d.appendChild(el('p', 'abstract', paper.conclusion));
+      paper.conclusionHeading ? `The paper's ${paper.conclusionHeading.toLowerCase()}, read from the PDF`
+                              : 'Closing paragraphs, read from the PDF'));
+    const p = el('p', 'abstract', paper.conclusion);
+    p.style.marginTop = '8px';
+    d.appendChild(p);
     body.appendChild(d);
   }
   wrap.appendChild(body);
 
-  const rail = el('div', 'screen-rail');
-  const keep = el('button', 'primary');
-  keep.style.cssText = 'width:100%;padding:11px;font-weight:600';
-  keep.textContent = screenState.mode === 'toScreen' ? 'Keep — get full text' : 'Include in review';
+  const rail = el('aside', 'screen-rail');
+  rail.setAttribute('aria-label', 'Decision');
+  const keep = el('button', 'primary keep-btn');
+  const kt = el('span');
+  kt.append(screenState.mode === 'toScreen' ? 'Keep' : 'Include in review');
+  kt.appendChild(el('small', null, screenState.mode === 'toScreen' ? 'Move to full-text screening' : 'Counts as included in PRISMA'));
+  keep.append(kt, el('kbd', null, 'F'));
   keep.onclick = () => decide(screenState.mode === 'toScreen' ? 'sought' : 'included');
   rail.appendChild(keep);
 
   if (paper.hasFile) {
-    const read = el('button', 'quiet');
-    read.style.cssText = 'width:100%;margin-top:6px';
-    read.textContent = 'Read the full text';
+    const read = el('button', 'quiet', 'Read the full text');
     read.onclick = () => { openSource(paper.id); go('reader'); };
     rail.appendChild(read);
   }
 
-  const label = el('div', 'meta');
-  label.style.margin = '14px 0 5px';
-  label.textContent = 'EXCLUDE — PICK A REASON';
-  rail.appendChild(label);
+  rail.appendChild(el('div', 'ex-head', 'Exclude'));
+  rail.appendChild(el('p', 'ex-sub', 'PRISMA needs a reason for every exclusion.'));
+  const reasons = el('div', 'reasons');
   db.EXCLUSION_REASONS.forEach((r, i) => {
-    const b = el('button', 'reason', `${i < 9 ? i + 1 + '  ' : '   '}${r}`);
+    const b = el('button', 'reason', r);
+    if (i < 9) b.appendChild(el('kbd', null, String(i + 1)));
     b.onclick = () => decide(screenState.mode === 'toScreen' ? 'excludedScreening' : 'excludedFullText', r);
-    rail.appendChild(b);
+    reasons.appendChild(b);
   });
+  rail.appendChild(reasons);
 
   if (screenState.mode === 'decided') {
     const undo = el('button', 'quiet', 'Undo this decision');
-    undo.style.cssText = 'width:100%;margin-top:10px';
     undo.onclick = async () => { await setStage(paper.id, 'identified', ''); renderScreening(ctx, root); };
     rail.appendChild(undo);
   }
 
-  const nav = el('div', 'actions');
-  nav.style.marginTop = '12px';
-  const prev = el('button', 'quiet', '← Prev');
+  const nav = el('div', 'screen-nav');
+  const prev = el('button', 'quiet', '← Back');
   prev.disabled = screenState.index === 0;
   prev.onclick = () => { screenState.index--; renderScreening(ctx, root); };
   const next = el('button', 'quiet', 'Skip →');
@@ -587,13 +679,28 @@ export function renderScreening(ctx, root) {
   next.onclick = () => { screenState.index++; renderScreening(ctx, root); };
   nav.append(prev, next);
   rail.appendChild(nav);
-  rail.appendChild(el('p', 'hint', 'F keep · 1–9 exclude with that reason · J next · K previous'));
+  rail.appendChild(el('p', 'hint', 'F keep · 1–9 exclude with that reason · J next · K back'));
   wrap.appendChild(rail);
   root.appendChild(wrap);
 
   async function decide(stage, reason = '') {
+    const before = { stage: paper.stage, reason: paper.reason || '', mode: screenState.mode, index: screenState.index };
+    // The record leaves the way the decision went: kept papers move on, excluded ones drop
+    // away. Short enough not to slow a fast screener down.
+    const card = root.querySelector('.screen-body');
+    if (card && !reducedMotion()) {
+      card.classList.add(stage.startsWith('excluded') ? 'leave-ex' : 'leave-keep');
+      await new Promise(r => setTimeout(r, 160));
+    }
     await setStage(paper.id, stage, reason);
     renderScreening(ctx, root);
+    const said = stage === 'sought' ? 'Kept for full text' : stage === 'included' ? 'Included in the review'
+      : `Excluded · ${reason}`;
+    ctx.toast(said, { label: 'Undo', run: async () => {
+      await setStage(paper.id, before.stage, before.reason);
+      screenState.mode = before.mode; screenState.index = before.index;
+      renderScreening(ctx, root);
+    } });
   }
   screenState.decide = decide;
   screenState.queueLength = queue.length;

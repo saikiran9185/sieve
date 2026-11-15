@@ -4,6 +4,8 @@ The same workspace as the desktop app, in a browser: find papers, screen them wi
 reasons, read and highlight them, and keep every highlight tied to the page and source it came
 from.
 
+**Sieve 2.0 adds an optional account** (Supabase): sign in and the library is backed up and synced across devices (`sync.js`), while this browser's copy stays the working copy and guest mode works as before. Without an account:
+
 **There is no account and no server.** Sources, highlights and the PDF files themselves live on
 your own computer. Nothing is uploaded, which is also why there is nothing to log in to — a
 sign-in screen would mean a server holding your reading, and at that point the tool is renting

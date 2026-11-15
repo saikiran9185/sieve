@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en" data-v="a">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sieve · Screening, calm</title>
+<style>
+@font-face{font-family:"Instrument Serif";src:url(../../web/fonts/instrument-serif-400.woff2) format("woff2");font-weight:400}
+@font-face{font-family:"Public Sans";src:url(../../web/fonts/public-sans-400.woff2) format("woff2");font-weight:400}
+@font-face{font-family:"Public Sans";src:url(../../web/fonts/public-sans-600.woff2) format("woff2");font-weight:600}
+:root{
+  --sky:#A9D6FE;--orange:#F58B23;--coral:#FAA09B;--ink:#302C28;--mist:#EDECED;--paper:#FFFFFF;
+  --bg:var(--paper);--side:#F6F5F4;--surface:var(--paper);--text:var(--ink);--muted:#6B6560;--hair:#E4E1DE;
+  --hover:#F3F1EF;--current:#ECEAE8;--on-accent:var(--ink);--focus:#2F7FD0;
+  --sheet-shadow:0 1px 2px rgba(48,44,40,.06),0 8px 24px rgba(48,44,40,.06);
+  --serif:"Instrument Serif",Georgia,serif;--sans:"Public Sans",system-ui,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#1E1B19;--side:#24211F;--surface:#2A2623;--text:#FFFFFF;--muted:#B5AEA8;--hair:#3A3532;
+  --hover:#2E2A27;--current:#36312E;--focus:#7DB8F0;--sheet-shadow:0 0 0 1px #3A3532;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#1E1B19;--side:#24211F;--surface:#2A2623;--text:#FFFFFF;--muted:#B5AEA8;--hair:#3A3532;
+  --hover:#2E2A27;--current:#36312E;--focus:#7DB8F0;--sheet-shadow:0 0 0 1px #3A3532;color-scheme:dark}
+
+*{box-sizing:border-box;margin:0}
+body{font:16px/1.5 var(--sans);color:var(--text);background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px}
+.muted{color:var(--muted)}
+kbd{font:400 12px/1 var(--sans);color:var(--muted);min-width:16px;display:inline-block;text-align:center}
+
+.app{display:grid;grid-template-columns:224px 1fr;min-height:100vh}
+
+/* sidebar: no border, just a slightly different neutral */
+.side{background:var(--side);padding:24px 12px;display:flex;flex-direction:column;gap:2px}
+.brand{font:28px/1 var(--serif);padding:0 12px 24px;display:flex;align-items:baseline;gap:2px}
+.brand i{width:7px;height:7px;background:var(--orange);border-radius:50%}
+.review{padding:0 12px 24px;text-align:left}
+.review b{display:block;font-weight:600;font-size:14px}
+.review span{font-size:12px;color:var(--muted)}
+.group{font-size:12px;color:var(--muted);padding:16px 12px 4px}
+.nav{display:flex;justify-content:space-between;align-items:center;border-radius:8px;padding:6px 12px;font-size:14px;text-align:left;min-height:32px}
+.nav:hover{background:var(--hover)}
+.nav[aria-current]{background:var(--current);font-weight:600}
+.nav .n{font-size:12px;color:var(--muted);font-weight:400}
+.foot{margin-top:auto;padding:12px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:8px}
+.sync{display:flex;align-items:center;gap:8px}
+.sync::before{content:"";width:6px;height:6px;border-radius:50%;background:#3a9a5b}
+
+/* main */
+main{display:flex;flex-direction:column;min-width:0}
+.top{display:flex;align-items:center;gap:24px;padding:20px 32px;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.top h1{font:400 28px/1 var(--serif)}
+.seg{display:flex;gap:4px;font-size:14px}
+.seg button{padding:6px 12px;border-radius:8px;color:var(--muted)}
+.seg button:hover{color:var(--text)}
+.seg [aria-pressed=true]{background:var(--current);color:var(--text)}
+.prog{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:14px;color:var(--muted)}
+.prog .track{width:120px;height:4px;border-radius:2px;background:var(--hair);overflow:hidden}
+.prog .track span{display:block;height:100%;width:2%;background:var(--orange)}
+.queueBtn{display:none;font-size:14px;padding:6px 12px;border-radius:8px;background:var(--current)}
+
+.body{display:grid;grid-template-columns:288px minmax(0,1fr) 304px;flex:1;min-height:0}
+
+/* queue: plain list, hairline between columns only */
+.queue{border-right:1px solid var(--hair);padding:16px 12px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+.filter{border:1px solid var(--hair);background:var(--surface);border-radius:8px;padding:8px 12px;font-size:14px;margin:0 0 12px}
+.filter::placeholder{color:var(--muted)}
+.item{text-align:left;padding:12px;border-radius:8px}
+.item:hover{background:var(--hover)}
+.item[aria-current]{background:var(--current)}
+.item b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:400;font-size:14px;line-height:1.4}
+.item[aria-current] b{font-weight:600}
+.item span{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+
+/* paper */
+.paper{padding:40px 48px 48px;max-width:760px}
+.src{font-size:14px;color:var(--muted);margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.src .ok{display:inline-flex;align-items:center;gap:6px;color:var(--text)}
+.src .ok::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--sky)}
+.paper h2{font:400 40px/1.1 var(--serif);margin-bottom:16px;text-wrap:balance}
+.by{font-size:14px;color:var(--muted);margin-bottom:32px}
+.by a{color:var(--text);text-underline-offset:3px;text-decoration-color:var(--hair)}
+.kw{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:32px;font-size:14px;color:var(--muted)}
+.kw span+span::before{content:"·";margin-right:8px}
+.abstract{font:20px/1.6 var(--serif);max-width:62ch}
+
+/* decide: no card, a column on the background */
+.decide{border-left:1px solid var(--hair);padding:32px 24px;display:flex;flex-direction:column;gap:24px}
+.keep{display:flex;align-items:center;gap:12px;width:100%;background:var(--sky);color:var(--on-accent);border-radius:12px;padding:14px 16px;text-align:left;transition:transform .15s ease,filter .15s ease}
+.keep:hover{filter:brightness(.97)}
+.keep:active{transform:scale(.98)}
+.keep b{font-weight:600}
+.keep span{display:block;font-size:12px}
+.keep kbd{margin-left:auto;color:var(--on-accent);opacity:.75}
+.ex h3{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.ex h3::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--coral)}
+.ex p{font-size:12px;color:var(--muted);margin-bottom:8px}
+.reasons{display:flex;flex-direction:column}
+.reason{display:flex;gap:12px;align-items:center;padding:8px;border-radius:8px;font-size:14px;text-align:left;min-height:36px}
+.reason:hover{background:var(--hover)}
+.reason kbd{order:2;margin-left:auto}
+.other{border:0;border-bottom:1px solid var(--hair);background:none;padding:8px;font-size:14px;margin-top:4px}
+.other::placeholder{color:var(--muted)}
+.move{display:flex;justify-content:space-between;font-size:14px}
+.move button{padding:8px;border-radius:8px;color:var(--muted)}
+.move button:hover{background:var(--hover);color:var(--text)}
+.pdf{display:flex;gap:12px;align-items:center;font-size:14px;margin-top:auto}
+.pdf img{width:48px;border-radius:8px;background:var(--sky);padding:2px}
+.pdf span{display:block;font-size:12px;color:var(--muted)}
+
+/* ===== B · Desk: the paper is the only sheet ===== */
+[data-v=b]{--bg:var(--side)}
+[data-v=b] .side{background:transparent}
+[data-v=b] .top{border-bottom:0;padding-bottom:8px}
+[data-v=b] .queue,[data-v=b] .decide{border:0}
+[data-v=b] .paper{background:var(--surface);border-radius:16px;box-shadow:var(--sheet-shadow);margin:16px 0 32px;max-width:none}
+[data-v=b] .filter{background:var(--surface)}
+[data-v=b] .item[aria-current]{background:var(--surface);box-shadow:var(--sheet-shadow)}
+
+/* ===== C · Focus: one paper, decisions in a dock ===== */
+[data-v=c] .body{grid-template-columns:1fr;justify-items:center;padding-bottom:120px}
+[data-v=c] .queue{display:none}
+[data-v=c] .queueBtn{display:inline-block}
+[data-v=c] .paper{padding:48px 24px}
+[data-v=c] .decide{position:fixed;left:224px;right:0;bottom:0;border:0;border-top:1px solid var(--hair);background:var(--bg);padding:16px 32px;flex-direction:row;align-items:center;gap:16px;flex-wrap:wrap}
+[data-v=c] .keep{width:auto;padding:12px 20px}
+[data-v=c] .keep span{display:none}
+[data-v=c] .ex{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+[data-v=c] .ex h3{margin:0;white-space:nowrap}
+[data-v=c] .ex p,[data-v=c] .other,[data-v=c] .pdf{display:none}
+[data-v=c] .reasons{flex-direction:row;flex-wrap:wrap;gap:4px}
+[data-v=c] .reason{border:1px solid var(--hair);padding:6px 10px;min-height:32px}
+[data-v=c] .reason kbd{order:0;margin:0}
+[data-v=c] .move{gap:4px}
+
+/* version switcher (preview only) */
+.tweak{position:fixed;top:16px;right:16px;z-index:9;display:flex;gap:4px;padding:4px;border-radius:12px;background:var(--ink);color:#fff;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+.tweak button{padding:6px 10px;border-radius:8px;color:#fff;opacity:.75}
+.tweak [aria-pressed=true]{background:#fff;color:var(--ink);opacity:1}
+
+/* tablet */
+@media (max-width:1180px){
+  .body{grid-template-columns:minmax(0,1fr) 288px}
+  .queue{display:none}.queueBtn{display:inline-block}
+  .paper{padding:32px}
+}
+/* phone: everything stacks, decisions docked at the bottom for the thumb */
+@media (max-width:760px){
+  .app{grid-template-columns:1fr}
+  .side{display:none}
+  .top{padding:16px;gap:12px}
+  .seg{order:3;width:100%;overflow-x:auto}
+  .prog .track{width:64px}
+  .body,[data-v=c] .body{grid-template-columns:1fr;padding-bottom:180px}
+  .paper,[data-v=c] .paper{padding:24px 16px}
+  [data-v=b] .paper{margin:8px 12px 24px}
+  .paper h2{font-size:28px}
+  .abstract{font-size:18px}
+  .decide,[data-v=c] .decide{position:fixed;left:0;right:0;bottom:0;border:0;border-top:1px solid var(--hair);background:var(--bg);padding:12px 16px calc(12px + env(safe-area-inset-bottom));flex-direction:column;align-items:stretch;gap:8px}
+  .keep,[data-v=c] .keep{width:100%;min-height:48px;justify-content:center}
+  .keep kbd,.keep span,.ex p,.other,.pdf,.move{display:none}
+  .ex,[data-v=c] .ex{display:block}
+  .ex h3{display:none}
+  .reasons,[data-v=c] .reasons{flex-direction:row;overflow-x:auto;gap:8px;flex-wrap:nowrap;scrollbar-width:none}
+  .reason,[data-v=c] .reason{flex:none;border:1px solid var(--hair);min-height:44px;padding:8px 14px;white-space:nowrap}
+  .reason kbd{display:none}
+  .reason::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--coral)}
+  .tweak{top:auto;bottom:180px;right:12px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="tweak" role="group" aria-label="Preview version">
+  <button data-set="a" aria-pressed="true">A · Paper</button>
+  <button data-set="b" aria-pressed="false">B · Desk</button>
+  <button data-set="c" aria-pressed="false">C · Focus</button>
+  <button id="theme" aria-label="Switch theme">Auto</button>
+</div>
+
+<div class="app">
+  <nav class="side" aria-label="Sections">
+    <div class="brand">Sieve<i></i></div>
+    <button class="review"><b>Flip-top cap security systems</b><span>Systematic review · 165 records</span></button>
+    <button class="nav">Overview</button>
+    <button class="nav">Find papers</button>
+    <button class="nav">Library</button>
+    <p class="group">Review</p>
+    <button class="nav" aria-current="page">Screening <span class="n">165</span></button>
+    <button class="nav">Reader</button>
+    <button class="nav">Evidence</button>
+    <button class="nav">Map</button>
+    <button class="nav">Matrix</button>
+    <button class="nav">PRISMA</button>
+    <p class="group">Setup</p>
+    <button class="nav">Method</button>
+    <button class="nav">Tags <span class="n">14</span></button>
+    <button class="nav">Settings</button>
+    <div class="foot"><span class="sync">Saved and synced</span><span>Demo account</span></div>
+  </nav>
+
+  <main>
+    <header class="top">
+      <h1>Screening</h1>
+      <div class="seg" role="group" aria-label="Stage">
+        <button aria-pressed="true">Title and abstract</button>
+        <button aria-pressed="false">Full text</button>
+        <button aria-pressed="false">Decided</button>
+      </div>
+      <button class="queueBtn">Queue · 165</button>
+      <div class="prog"><span>1 of 165</span><span class="track"><span></span></span></div>
+    </header>
+
+    <div class="body">
+      <section class="queue" aria-label="Records to screen">
+        <input class="filter" placeholder="Filter 165 records" aria-label="Filter records">
+        <button class="item" aria-current="true"><b>Stage-Complete Mapping of Pairwise Monocular Structure-from-Motion to FPGAs</b><span>Stamatakis P, Vourvoulakis J · 2026</span></button>
+        <button class="item"><b>Anterior insular co-activation patterns associated with stress markers in chronic pain</b><span>Häuselmann S et al. · 2026</span></button>
+        <button class="item"><b>NephroNet: a calibration-aware, patient-disjoint benchmark for multiclass kidney CT</b><span>Dong Y et al. · 2026</span></button>
+        <button class="item"><b>Dynamic Shape Modulation of Deflated and Adhered Lipid Vesicles</b><span>Wolfsberg G et al. · 2025</span></button>
+        <button class="item"><b>Fail-Closed Validation of Lineage-Associated Transcript-Count Diversity</b><span>Quiroz RN et al. · 2026</span></button>
+        <button class="item"><b>A Review of Wafer-Level Packaging Technology for SAW and BAW Filters</b><span>Liu X et al. · 2025</span></button>
+        <button class="item"><b>An optimized framework for simultaneous EEG-fMRI at 7T</b><span>Martinez CS et al. · 2025</span></button>
+        <button class="item"><b>Dynamic brain connectivity patterns induced by oxytocin</b><span>Klugah-Brown B et al. · 2026</span></button>
+      </section>
+
+      <article class="paper">
+        <p class="src"><span>Europe PMC</span><span>·</span><span>New</span><span>·</span><span class="ok">PDF ready</span></p>
+        <h2>Stage-Complete Mapping of Pairwise Monocular Structure-from-Motion to Field-Programmable Gate Arrays</h2>
+        <p class="by">Stamatakis P, Vourvoulakis J · 2026 · <a href="#">doi.org/10.3390/jimaging12090451</a></p>
+        <p class="kw"><span>FPGA</span><span>VCU118</span><span>Structure from motion</span><span>Monocular</span></p>
+        <p class="abstract">This paper presents a stage-complete programmable-logic architecture for pairwise monocular structure from motion using calibrated, pre-undistorted 1920 × 1080 video. It integrates streaming feature extraction, Block-RAM-backed Top-K selection, spatial-bucket matching, two-pass essential-matrix estimation and pruning, fixed-point pose recovery, and triangulation with point-coordinate output.</p>
+      </article>
+
+      <aside class="decide" aria-label="Decision">
+        <button class="keep"><div><b>Keep</b><span>Move to full-text screening</span></div><kbd>F</kbd></button>
+        <div class="ex">
+          <h3>Exclude</h3>
+          <p>PRISMA needs a reason for every exclusion.</p>
+          <div class="reasons">
+            <button class="reason"><kbd>1</kbd>Wrong population</button>
+            <button class="reason"><kbd>2</kbd>Wrong intervention</button>
+            <button class="reason"><kbd>3</kbd>Wrong outcome</button>
+            <button class="reason"><kbd>4</kbd>Wrong study design</button>
+            <button class="reason"><kbd>5</kbd>Not peer reviewed</button>
+            <button class="reason"><kbd>6</kbd>Not in English</button>
+            <button class="reason"><kbd>7</kbd>Outside date range</button>
+            <button class="reason"><kbd>8</kbd>Duplicate</button>
+            <button class="reason"><kbd>9</kbd>Off topic</button>
+          </div>
+          <input class="other" placeholder="Other reason" aria-label="Other reason">
+        </div>
+        <div class="move"><button>← Back</button><button>Skip <kbd>J</kbd></button></div>
+        <div class="pdf"><img src="../brand/cat-clipboard-mono.svg" alt=""><div>PDF checked<span>45 pages · 1.4 MB</span></div></div>
+      </aside>
+    </div>
+  </main>
+</div>
+<script>
+(()=>{const r=document.documentElement;
+const get=k=>{try{return localStorage.getItem(k)}catch(e){return null}},put=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+const vb=[...document.querySelectorAll('[data-set]')];
+const setV=v=>{r.dataset.v=v;vb.forEach(b=>b.setAttribute('aria-pressed',b.dataset.set===v));put('sieve-v',v)};
+vb.forEach(b=>b.onclick=()=>setV(b.dataset.set));setV(get('sieve-v')||'a');
+const tb=document.getElementById('theme'),order=['Auto','Light','Dark'];let t=get('sieve-theme2')||'Auto';
+const setT=v=>{t=v;v==='Auto'?r.removeAttribute('data-theme'):r.dataset.theme=v.toLowerCase();tb.textContent=v;put('sieve-theme2',v)};
+setT(t);tb.onclick=()=>setT(order[(order.indexOf(t)+1)%3]);
+document.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>document.querySelectorAll('.seg button').forEach(x=>x.setAttribute('aria-pressed',x===b)));
+document.querySelectorAll('.item').forEach(b=>b.onclick=()=>document.querySelectorAll('.item').forEach(x=>x.toggleAttribute('aria-current',x===b)));
+})();
+</script>
+</body>
+</html>

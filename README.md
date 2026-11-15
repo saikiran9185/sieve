@@ -1,5 +1,7 @@
 # Sieve
 
+**Research you can Trust.**
+
 A provenance-first research workspace for macOS.
 
 Sources, evidence and your own thinking are kept as three separate things, permanently

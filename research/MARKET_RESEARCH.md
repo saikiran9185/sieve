@@ -96,8 +96,9 @@ That is four tools. **Sieve's pitch is one workspace.**
 | Price / privacy | Free, open source, data stays on the device | Freemium / paid | Paid per review or institution | Free (paid storage) | Freemium / paid |
 
 > **Fact check (against README):**
-> - The Mac app searches **nine** databases at once and the web app **seven**. Gemini's "14" is wrong.
+> - The Mac app searches **nine** databases at once for free, and **five more** with a free API key. That makes 14, so Gemini's number holds; the web app searches seven.
 > - Sieve ships as a **notarised DMG** and a **zero-install web app**. Gemini's "manual build only" is outdated.
+> - Sieve has an **optional** Claude assistant. It never records a decision, and its output carries an AI badge.
 
 ### Advantages
 - **Provenance:** every quote and data point stays tied to its exact passage in the PDF, and evidence is kept separate from interpretation. There is no AI to hallucinate.

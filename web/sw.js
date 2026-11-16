@@ -4,12 +4,12 @@
 // on the first visit, so a fix ships and nobody receives it. This tries the network first and
 // falls back to the cache, which keeps the app fully usable with no connection while making
 // sure a newer version is picked up the moment there is one.
-const CACHE = 'sieve-v13';
+const CACHE = 'sieve-v14';
 const ASSETS = [
   './', './index.html', './app.css', './app.js', './db.js', './reader.js',
   './storage.js', './search.js', './views.js', './inspector.js', './method.js',
   './map.js', './trail.js', './guide.js', './exports.js', './citations.js',
-  './retrieve.js', './zip.js', './shell.js', './sync.js', './icons.js', './extras.js', './auth.js', './auth.css', './supabase-config.js',
+  './retrieve.js', './zip.js', './shell.js', './sync.js', './icons.js', './extras.js', './ui.js', './auth.js', './auth.css', './supabase-config.js',
   './vendor/supabase.js', './fonts/instrument-serif-400.woff2', './fonts/public-sans-400.woff2',
   './fonts/public-sans-600.woff2', './img/cat-find.png', './img/cat-wave.png', './img/cat-clipboard.svg', './icon.svg', './manifest.webmanifest',
   './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs',

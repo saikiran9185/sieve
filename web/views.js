@@ -3,6 +3,14 @@
 // state and these only render and act on it.
 
 import * as db from './db.js';
+import * as ui from './ui.js';
+import { icon } from './icons.js';
+/// A button label followed (or preceded) by an icon from the one icon set.
+export function iconLabel(b, name, before = false) {
+  b.insertAdjacentHTML(before ? 'afterbegin' : 'beforeend', `<span class="ico-inline">${icon(name, 16)}</span>`);
+  return b;
+}
+
 import { PROVIDERS, BLOCKED, searchAll, dedupeKey } from './search.js';
 import { EXTERNAL_SITES, siteURL } from './citations.js';
 
@@ -31,7 +39,7 @@ export function renderOverview(ctx, root) {
   if (state.project?.question) {
     head.appendChild(el('p', 'ov-question', state.project.question));
   } else {
-    const b = el('button', 'quiet ov-question-empty', 'Write your review question →');
+    const b = iconLabel(el('button', 'quiet ov-question-empty', 'Write your review question'), 'arrowRight');
     b.onclick = () => go('settings');
     head.appendChild(b);
   }
@@ -116,7 +124,7 @@ export function renderOverview(ctx, root) {
       body.appendChild(el('h4', null, g.title));
       body.appendChild(el('div', 'meta', g.detail));
       row.appendChild(body);
-      row.appendChild(el('span', 'go', '→'));
+      { const g = el('span', 'go'); g.innerHTML = icon('chevronRight', 16); row.appendChild(g); }
       row.onclick = () => go(g.view);
       sec.appendChild(row);
     }
@@ -320,7 +328,7 @@ export function renderFind(ctx, root) {
     const st = searchState.progress[p.name];
     const label = st?.state === 'done' ? `${p.name} ${st.count}`
                 : st?.state === 'running' ? `${p.name} …`
-                : st?.state === 'failed' ? `${p.name} ✕` : p.name;
+                : st?.state === 'failed' ? `${p.name} · failed` : p.name;
     b.textContent = label;
     b.setAttribute('aria-pressed', String(searchState.enabled.has(p.name)));
     b.title = p.blurb;
@@ -336,7 +344,7 @@ export function renderFind(ctx, root) {
     x.disabled = true;
     provBar.appendChild(x);
   }
-  const elsewhere = el('button', 'provider elsewhere', 'Google Scholar & others →');
+  const elsewhere = iconLabel(el('button', 'provider elsewhere', 'Google Scholar & others'), 'arrowRight');
   elsewhere.title = 'Search the places no browser can query, and bring the citations back';
   elsewhere.onclick = () => handOff(ctx, input.value.trim() || searchState.query);
   provBar.appendChild(elsewhere);
@@ -344,18 +352,10 @@ export function renderFind(ctx, root) {
 
   const list = el('div', 'list');
   if (!searchState.results.length && !searchState.running) {
-    const e = el('div', 'empty');
-    const pic = el('div', 'illus');
-    const img = el('img'); img.src = 'img/cat-find.png'; img.alt = '';
-    pic.appendChild(img);
-    e.appendChild(pic);
-    e.appendChild(el('h2', null, 'Seven databases, one query'));
-    e.appendChild(el('p', null, 'OpenAlex, Crossref, Europe PMC, PubMed, DOAJ, PLOS and OpenAIRE at the same time. Records describing the same paper are merged, so you screen each paper once. Free PDFs are linked where they legally exist.'));
-    const also = el('p', null, 'Google Scholar, Scopus, Web of Science and the publishers cannot be queried from any browser. Sieve opens your search there and takes the .bib or .ris you export back.');
-    e.appendChild(also);
-    const b = el('button', 'quiet', 'Search Google Scholar and the rest →');
-    b.onclick = () => handOff(ctx, input.value.trim() || searchState.query);
-    e.appendChild(b);
+    const e = ui.emptyState({ kind: 'first', art: 'find', title: 'Seven databases, one query',
+      body: ['OpenAlex, Crossref, Europe PMC, PubMed, DOAJ, PLOS and OpenAIRE at the same time. Records describing the same paper are merged, so you screen each paper once.',
+             'Google Scholar, Scopus and Web of Science cannot be queried from a browser. Sieve opens your search there and takes back the .bib or .ris you export.'],
+      secondary: { label: 'Search Google Scholar and the rest', icon: 'arrowRight', onClick: () => handOff(ctx, input.value.trim() || searchState.query) } });
     list.appendChild(e);
   } else {
     const head = el('div', 'list-head');
@@ -484,7 +484,7 @@ export function handOff(ctx, query) {
       text.appendChild(el('div', 'meta', site.blurb));
       text.appendChild(el('div', 'hint', site.howTo));
       card.appendChild(text);
-      const b = el('button', 'quiet', 'Open →');
+      const b = iconLabel(el('button', 'quiet', 'Open'), 'arrowRight');
       b.onclick = () => window.open(siteURL(site, input.value.trim()), '_blank', 'noopener');
       card.appendChild(b);
       body.appendChild(card);
@@ -542,17 +542,14 @@ export function renderScreening(ctx, root) {
   root.appendChild(bar);
 
   if (!paper) {
-    const e = el('div', 'empty');
-    const pic = el('div', 'illus');
-    const img = el('img'); img.src = 'img/cat-wave.png'; img.alt = '';
-    pic.appendChild(img);
-    e.appendChild(pic);
-    e.appendChild(el('h2', null, screenState.mode === 'decided' ? 'Nothing decided yet'
-      : screenState.mode === 'toScreen' && state.sources.length ? 'All screened' : 'Nothing waiting'));
-    e.appendChild(el('p', null, screenState.mode === 'toScreen'
-      ? (state.sources.length ? 'Every record has a decision. Anything you kept is under Full text.'
-                              : 'Find papers or add your own, and they will queue up here.')
-      : 'Decisions you make appear here and can always be changed.'));
+    const none = !state.sources.length;
+    const e = none
+      ? ui.emptyState({ kind: 'first', title: 'Nothing to screen yet', body: 'Find papers or add your own, and they will queue up here.' })
+      : screenState.mode === 'decided'
+        ? ui.emptyState({ kind: 'first', title: 'No decisions yet', body: 'Decisions you make appear here and can always be changed.' })
+        : ui.emptyState({ kind: 'clear', title: screenState.mode === 'toScreen' ? 'All screened' : 'Full text done',
+            body: screenState.mode === 'toScreen' ? 'Every record has a decision. Anything you kept is under Full text.'
+                                                  : 'Every kept record has a full-text decision. PRISMA is up to date.' });
     if (!state.sources.length) {
       const b = el('button', 'primary', 'Find papers');
       b.onclick = () => go('find');
@@ -671,10 +668,10 @@ export function renderScreening(ctx, root) {
   }
 
   const nav = el('div', 'screen-nav');
-  const prev = el('button', 'quiet', '← Back');
+  const prev = iconLabel(el('button', 'quiet', 'Back'), 'chevronLeft', true);
   prev.disabled = screenState.index === 0;
   prev.onclick = () => { screenState.index--; renderScreening(ctx, root); };
-  const next = el('button', 'quiet', 'Skip →');
+  const next = iconLabel(el('button', 'quiet', 'Skip'), 'chevronRight');
   next.disabled = screenState.index >= queue.length - 1;
   next.onclick = () => { screenState.index++; renderScreening(ctx, root); };
   nav.append(prev, next);
@@ -780,13 +777,9 @@ export function renderMatrix(ctx, root) {
   root.appendChild(bar);
 
   if (!rows.length) {
-    const e = el('div', 'empty');
-    e.appendChild(el('h2', null, 'No papers included yet'));
-    e.appendChild(el('p', null, 'The matrix shows the papers you decided to include. Screen some records first.'));
-    const b = el('button', 'primary', 'Go to screening');
-    b.onclick = () => go('screening');
-    e.appendChild(b);
-    root.appendChild(e);
+    root.appendChild(ui.emptyState({ kind: 'setup', title: 'No included papers yet',
+      body: 'The matrix shows the papers you decided to include. Screen some records first.',
+      primary: { label: 'Go to screening', onClick: () => go('screening') } }));
     return;
   }
 
@@ -855,16 +848,10 @@ function editCell(ctx, source, column, key) {
     const f2 = el('div', 'field');
     f2.appendChild(el('label', null, mine.length ? 'Cite highlights from this paper' : 'No highlights from this paper yet'));
     for (const e of mine) {
-      const b = el('button', 'quiet');
-      b.style.cssText = 'text-align:left;width:100%;margin-bottom:4px';
-      const tick = () => b.textContent = (picked.has(e.id) ? '✓ ' : '   ') + e.quote.slice(0, 90);
-      tick();
-      b.onclick = () => {
-        if (picked.has(e.id)) picked.delete(e.id);
+      f2.appendChild(ui.checkRow(e.quote.slice(0, 120), picked.has(e.id), (on) => {
+        if (!on) picked.delete(e.id);
         else { picked.add(e.id); if (!ta.value.trim()) ta.value = e.quote; }
-        tick();
-      };
-      f2.appendChild(b);
+      }, e.page ? `p. ${e.page}` : null));
     }
     body.appendChild(f2);
 
@@ -926,10 +913,9 @@ export function renderFrames(ctx, root) {
   root.appendChild(bar);
 
   if (!state.frames.length) {
-    const e = el('div', 'empty');
-    e.appendChild(el('h2', null, 'A SWOT that cites its evidence'));
-    e.appendChild(el('p', null, 'A framework here is a grid whose cells link to your actual highlights, in the same project as your sources. That citation is the difference between this and a whiteboard.'));
-    root.appendChild(e);
+    root.appendChild(ui.emptyState({ kind: 'first', title: 'No frameworks yet', art: 'read',
+      body: 'A framework is a grid (a SWOT, PICO, themes by setting) whose cells link to your highlights, so every claim can point back to its page.',
+      primary: { label: 'New framework', icon: 'plus', onClick: () => pickTemplate(ctx) } }));
     return;
   }
 
@@ -1046,17 +1032,10 @@ function editFrameCell(ctx, frame, row, col, key) {
     }
     for (const e of state.evidence.slice(0, 60)) {
       const src = state.sources.find(s => s.id === e.sourceId);
-      const b = el('button', 'quiet');
-      b.style.cssText = 'text-align:left;width:100%;margin-bottom:4px';
-      const tick = () => b.textContent = (picked.has(e.id) ? '✓ ' : '   ') +
-        e.quote.slice(0, 70) + (src ? ` — ${(src.title || '').slice(0, 26)}` : '');
-      tick();
-      b.onclick = () => {
-        if (picked.has(e.id)) picked.delete(e.id);
+      f2.appendChild(ui.checkRow(e.quote.slice(0, 120), picked.has(e.id), (on) => {
+        if (!on) picked.delete(e.id);
         else { picked.add(e.id); if (!ta.value.trim()) ta.value = e.quote; }
-        tick();
-      };
-      f2.appendChild(b);
+      }, src ? (src.title || '').slice(0, 40) : null));
     }
     body.appendChild(f2);
 

@@ -106,11 +106,11 @@
     <section id="library" class="view hidden">
       <div class="bar">
         <input id="filter" type="search" placeholder="Filter by title or author" aria-label="Filter sources">
-        <select id="stageFilter" aria-label="Filter by stage"><option value="">All stages</option></select>
+        <div id="stageSeg"></div>
         <span class="grow"></span>
-        <span id="libraryCount" class="meta"></span>
-        <button id="getAllPDFs" class="quiet">Get missing PDFs</button>
-        <button id="libraryExport" class="quiet">Export…</button>
+        <span id="libraryCount" class="meta" aria-live="polite"></span>
+        <button id="getAllPDFs" class="quiet tool-btn" title="Fetch the free PDFs that exist for records without one"><span data-icon="file"></span><span class="lbl">Get missing PDFs</span></button>
+        <button id="libraryExport" class="quiet tool-btn" title="Export the library as a spreadsheet or citations"><span data-icon="download"></span><span class="lbl">Export</span></button>
       </div>
       <div id="sourceList" class="list"></div>
     </section>

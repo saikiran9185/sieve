@@ -7,6 +7,7 @@
 // same passages, without either owning the data.
 
 import * as db from './db.js';
+import { icon } from './icons.js';
 import { el, chip } from './views.js';
 
 export function active(state) {
@@ -104,7 +105,8 @@ function activeCard(ctx, m) {
     if (!block) return;
     const row = el('div', 'step');
     row.dataset.state = i < m.step ? 'done' : i === m.step ? 'now' : 'todo';
-    const bullet = el('span', 'step-n', i < m.step ? '✓' : String(i + 1));
+    const bullet = el('span', 'step-n', i < m.step ? null : String(i + 1));
+    if (i < m.step) { bullet.innerHTML = icon('check', 14); bullet.setAttribute('aria-label', 'Done'); }
     row.appendChild(bullet);
     const bodyCol = el('div', 'step-body');
     bodyCol.appendChild(el('strong', null, block.label));

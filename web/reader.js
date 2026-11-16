@@ -172,7 +172,7 @@ export class Reader {
           div.style.top = `${r.y * 100}%`;
           div.style.width = `${r.w * 100}%`;
           div.style.height = `${r.h * 100}%`;
-          div.style.background = (e.color || '#F2C14E') + '55';
+          div.style.setProperty('--c', e.color || 'var(--orange)');
           div.title = e.note ? `${e.quote}\n\n${e.note}` : e.quote;
           div.dataset.evidence = e.id;
           p.marks.appendChild(div);

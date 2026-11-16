@@ -5,7 +5,7 @@
 // important — what the browser version cannot do and why, so nobody wastes an afternoon
 // looking for a button that is not there.
 
-import { el, chip } from './views.js';
+import { el, chip, iconLabel } from './views.js';
 
 const STEPS = [
   {
@@ -107,7 +107,7 @@ export function render(ctx, root) {
     title.appendChild(el('span', 'step-n', String(i + 1)));
     title.appendChild(el('h4', null, step.title));
     title.appendChild(el('span', 'grow'));
-    const go = el('button', 'quiet', 'Open →');
+    const go = iconLabel(el('button', 'quiet', 'Open'), 'arrowRight');
     go.onclick = () => ctx.go(step.view);
     title.appendChild(go);
     card.appendChild(title);

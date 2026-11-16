@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sieve · building blocks</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<script>try{var t=localStorage.getItem("sieve-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="app.css">
+<style>
+  /* Catalogue chrome only: not part of the app. */
+  body { display: block; overflow: auto; height: auto; background: var(--bg); color: var(--text); }
+  .cat { max-width: 1120px; margin: 0 auto; padding: 32px 32px 96px; }
+  .cat-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .cat-head h1 { font: 400 40px/1.1 var(--serif); margin: 0; }
+  .cat-head p { margin: 0; color: var(--dim); font-size: 14px; flex: 1 1 280px; }
+  .cat section { padding: 32px 0; border-bottom: 1px solid var(--line); }
+  .cat h2 { font: 400 24px/1.2 var(--serif); margin: 0 0 4px; }
+  .cat .note { color: var(--dim); font-size: 13px; margin: 0 0 20px; max-width: 640px; }
+  .cat .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; }
+  .cat .cell { min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
+  .cat .cell > .tag { font-size: 12px; color: var(--faint); }
+  .cat .slot { background: var(--bg); border-top: 1px solid var(--line); display: flex; min-height: 260px; }
+  .cat .slot.panel { background: var(--side); max-width: 300px; }
+  .cat .row-demo { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .cat .phone { width: 390px; max-width: 100%; border: 1px solid var(--line); border-radius: 24px; overflow: hidden; }
+  .cat .side-demo { width: 232px; background: var(--side); padding: 12px; border-radius: 12px; display: flex; flex-direction: column; gap: 1px; }
+  .cat .rail-demo { width: 64px; background: var(--side); padding: 12px 10px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .cat .rail-demo .nav { width: 44px; height: 40px; justify-content: center; padding: 0; }
+  .cat .rail-demo .nav .lbl, .cat .rail-demo .nav .badge { display: none; }
+</style>
+</head>
+<body>
+<main class="cat">
+  <div class="cat-head">
+    <h1>Building blocks</h1>
+    <p>Every shared piece of the Sieve web app in every state. Screens are assembled from these; change one here and every screen follows.</p>
+    <div id="themeHost"></div>
+  </div>
+  <div id="cat"></div>
+</main>
+<script type="module">
+import * as ui from './ui.js';
+import { icon, NAV_ICONS } from './icons.js';
+const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
+const root = document.getElementById('cat');
+const section = (title, note) => { const s = el('section'); s.append(el('h2', null, title)); if (note) s.append(el('p', 'note', note)); root.append(s); return s; };
+const cell = (parent, tag) => { const c = el('div', 'cell'); c.append(el('span', 'tag', tag)); parent.append(c); return c; };
+const noop = () => {};
+
+// theme switch, same choices as the profile menu
+let theme = (() => { try { return localStorage.getItem('sieve-theme') || 'auto'; } catch { return 'auto'; } })();
+const drawTheme = () => document.getElementById('themeHost').replaceChildren(ui.segmented(
+  [{ value: 'auto', label: 'Auto' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }], theme, (v) => {
+    theme = v; if (v === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v;
+    try { localStorage.setItem('sieve-theme', v); } catch {} drawTheme(); }, 'Theme'));
+drawTheme();
+
+// Buttons
+{ const s = section('Buttons', 'One primary per screen (sky). Default for second actions, quiet for the rest. Tool buttons carry an icon and never wrap.');
+  const r = el('div', 'row-demo'); s.append(r);
+  const mk = (cls, t, dis) => { const b = el('button', cls, t); if (dis) b.disabled = true; return b; };
+  r.append(mk('primary', 'Find papers'), mk('', 'Add column'), mk('quiet', 'Cancel'), ui.toolButton('Export', 'download', noop), ui.toolButton('Get missing PDFs', 'file', noop), mk('primary', 'Saving', true), mk('', 'Unavailable', true)); }
+
+// Segmented
+{ const s = section('Segmented control', 'One choice among a few, with counts. Replaces bare selects for filters.');
+  const g = el('div', 'grid2'); s.append(g);
+  cell(g, 'Library filter').append(ui.segmented([{ value: '', label: 'All' }, { value: 'a', label: 'To screen', count: 44 }, { value: 'b', label: 'Full text', count: 81 }, { value: 'c', label: 'Included', count: 38 }, { value: 'd', label: 'Excluded', count: 1284 }], '', noop));
+  cell(g, 'Screening stage').append(ui.segmented([{ value: 'a', label: 'Title and abstract', count: 42 }, { value: 'b', label: 'Full text', count: 0 }, { value: 'c', label: 'Decided', count: 144 }], 'b', noop)); }
+
+// Counts
+{ const s = section('Counts', 'Always a noun, the right plural, thousands separated.');
+  const r = el('div', 'row-demo'); s.append(r);
+  for (const [a, b] of [[0, 0], [1, 1], [186, 186], [12, 186], [1284, 1284]]) { const m = el('span', 'meta', ui.countLabel(a, b)); r.append(m); } }
+
+// Empty states
+{ const s = section('Empty states', 'Five kinds, three placements. Same surface as the content they stand in for.');
+  const g = el('div', 'grid2'); s.append(g);
+  const kinds = [
+    ['first · page', { kind: 'first', title: 'No papers yet', body: 'Search the databases under Find papers, or drop PDFs anywhere on this page.', primary: { label: 'Find papers', icon: 'search', onClick: noop }, secondary: { label: 'Add PDFs or citations', icon: 'upload', onClick: noop } }],
+    ['nomatch · section', { kind: 'nomatch', placement: 'section', title: 'No matches', body: 'Nothing in “Included” matches “Wiśniewska-Kowalczyk”.', primary: { label: 'Clear filters', onClick: noop } }],
+    ['clear · page', { kind: 'clear', title: 'All screened', body: 'Every record has a decision. Anything you kept is under Full text.' }],
+    ['setup · page', { kind: 'setup', title: 'No included papers yet', body: 'The matrix shows the papers you decided to include.', primary: { label: 'Go to screening', onClick: noop } }],
+    ['error · page', { kind: 'error', title: 'Search failed', body: 'Europe PMC did not answer. The other six databases returned results.', primary: { label: 'Try again', onClick: noop } }],
+    ['first · panel', { kind: 'first', placement: 'panel', title: 'No highlights yet', body: 'Select text in the PDF and press 1–8.' }],
+  ];
+  for (const [tag, o] of kinds) { const c = cell(g, tag); const slot = el('div', 'slot' + (o.placement === 'panel' ? ' panel' : '')); slot.append(ui.emptyState(o)); c.append(slot); } }
+
+// Check rows
+{ const s = section('Check rows', 'Pickers use real checkboxes, never a text tick.');
+  const box = el('div'); box.style.maxWidth = '520px'; s.append(box);
+  box.append(ui.checkRow('Working from home on most days was associated with a small rise in life satisfaction but a larger rise in loneliness for those living alone.', true, noop, 'p. 4'),
+             ui.checkRow('Isolation fully mediated the effect on exhaustion.', false, noop, 'p. 9')); }
+
+// Navigation
+{ const s = section('Navigation', 'Full sidebar row, and the icon rail used between 861 and 1100 px (labels become tooltips).');
+  const r = el('div', 'row-demo'); r.style.alignItems = 'flex-start'; s.append(r);
+  const navs = [['overview', 'Overview'], ['library', 'Library', 186], ['screening', 'Screening', 42], ['reader', 'Reader'], ['trail', 'AI trail', 3]];
+  for (const cls of ['side-demo', 'rail-demo']) { const box = el('div', cls); r.append(box);
+    navs.forEach(([v, l, n], i) => { const b = el('button', 'nav'); b.title = l; b.insertAdjacentHTML('afterbegin', icon(NAV_ICONS[v])); b.append(el('span', 'lbl', l)); if (n) b.append(el('span', 'badge', String(n))); if (i === 2) b.setAttribute('aria-current', 'true'); box.append(b); }); } }
+
+// Chips + phone
+{ const s = section('Chips and phone width', 'Status is a 6 px dot and a label, never a filled pill. Empty state at 390 px.');
+  const r = el('div', 'row-demo'); s.append(r);
+  for (const [l, c] of [['Included', 'var(--emerald)'], ['Excluded · abstract', 'var(--rose)'], ['To screen', 'var(--faint)'], ['Maybe', 'var(--orange)']]) { const ch = el('span', 'chip', l); ch.style.setProperty('--c', c); r.append(ch); }
+  const ph = el('div', 'phone'); ph.style.marginTop = '24px'; ph.append(ui.emptyState({ kind: 'first', title: 'Nothing to screen yet', body: 'Find papers or add your own, and they will queue up here.', primary: { label: 'Find papers', onClick: noop } })); s.append(ph); }
+</script>
+</body>
+</html>

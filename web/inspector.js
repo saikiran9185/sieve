@@ -5,8 +5,9 @@
 // questions, and only one of them is ever the one you have. Highlights is what you took
 // out; Paper is what it is and where it came from; Decision is whether it stays in.
 
+import * as ui from './ui.js';
 import * as db from './db.js';
-import { el, chip } from './views.js';
+import { el, chip, iconLabel } from './views.js';
 
 let tab = 'highlights';
 
@@ -40,10 +41,7 @@ export function render(ctx, io) {
 }
 
 function empty(title, message) {
-  const box = el('div', 'empty');
-  box.appendChild(el('h2', null, title));
-  box.appendChild(el('p', null, message));
-  return box;
+  return ui.emptyState({ kind: 'first', placement: 'panel', title, body: message });
 }
 
 // ---------------------------------------------------------------- highlights
@@ -243,7 +241,7 @@ function decision(ctx, io, body, source) {
     }
     wrap.appendChild(card);
   } else {
-    const b = el('button', 'quiet', 'Write your inclusion criteria →');
+    const b = iconLabel(el('button', 'quiet', 'Write your inclusion criteria'), 'arrowRight');
     b.onclick = () => ctx.go('settings');
     wrap.appendChild(b);
   }

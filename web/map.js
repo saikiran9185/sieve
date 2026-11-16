@@ -7,6 +7,7 @@
 // It also finds the works your own papers keep citing that are not in your library yet.
 // That is the reading you are missing, and it is the part a search box cannot tell you.
 
+import * as ui from './ui.js';
 import * as db from './db.js';
 import { el, chip } from './views.js';
 
@@ -128,15 +129,8 @@ function zoomControls(repaint) {
 }
 
 function empty(ctx, title, message, label, view, action) {
-  const box = el('div', 'empty');
-  box.appendChild(el('h2', null, title));
-  box.appendChild(el('p', null, message));
-  if (label) {
-    const b = el('button', 'primary', label);
-    b.onclick = action || (() => ctx.go(view));
-    box.appendChild(b);
-  }
-  return box;
+  return ui.emptyState({ kind: 'setup', title, body: message,
+    primary: label ? { label, onClick: action || (() => ctx.go(view)) } : null });
 }
 
 function toolbar(ctx, root) {

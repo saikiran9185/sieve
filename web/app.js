@@ -24,6 +24,7 @@ import { dedupeKey } from './search.js';
 import * as auth from './auth.js';
 import * as sync from './sync.js';
 import * as extras from './extras.js';
+import * as ui from './ui.js';
 
 const $ = (s) => document.querySelector(s);
 const el = views.el;
@@ -86,7 +87,8 @@ function cannotOpen(err) {
   $('#safetyText').textContent = 'Library not open';
   $('#folderBtn').hidden = true;
 
-  const box = el('div', 'empty');
+  const box = el('div', 'empty empty-error empty-page');
+  box.setAttribute('role', 'alert');
   box.appendChild(el('h2', null, 'Sieve could not open your library'));
   if (err?.blocked) {
     box.appendChild(el('p', null,
@@ -365,32 +367,56 @@ function scheduleSync() {
 
 // ---------------------------------------------------------------- library
 
+// Library filter groups: what people ask the list ("what is left to screen?", "what did I
+// keep?"), not the seven internal stages.
+const LIB_GROUPS = [
+  { value: '', label: 'All', stages: null },
+  { value: 'toScreen', label: 'To screen', stages: ['identified'] },
+  { value: 'fullText', label: 'Full text', stages: ['sought', 'notRetrieved'] },
+  { value: 'included', label: 'Included', stages: ['included'] },
+  { value: 'excluded', label: 'Excluded', stages: ['excludedScreening', 'excludedFullText', 'duplicate'] },
+];
+let libGroup = '';
+
 function renderLibrary() {
   const list = $('#sourceList');
-  const q = $('#filter').value.toLowerCase();
-  const stage = $('#stageFilter').value;
+  const q = $('#filter').value.trim().toLowerCase();
+  const inGroup = (s, g) => !g.stages || g.stages.includes(s.stage || 'identified');
+  const group = LIB_GROUPS.find(g => g.value === libGroup) || LIB_GROUPS[0];
 
-  const sel = $('#stageFilter');
-  if (sel.options.length <= 1) {
-    for (const [k, v] of Object.entries(db.STAGES)) sel.appendChild(new Option(v.label, k));
-  }
+  const segHost = $('#stageSeg');
+  segHost.replaceChildren(ui.segmented(
+    LIB_GROUPS.map(g => ({ value: g.value, label: g.label, count: g.stages ? state.sources.filter(s => inGroup(s, g)).length : null })),
+    libGroup, (v) => { libGroup = v; renderLibrary(); }, 'Filter by stage'));
+
   list.innerHTML = '';
   const rows = state.sources.filter(s => {
-    if (stage && s.stage !== stage) return false;
+    if (!inGroup(s, group)) return false;
     if (!q) return true;
     return (s.title + ' ' + (s.authors || []).join(' ')).toLowerCase().includes(q);
   });
-  $('#libraryCount').textContent = `${rows.length} of ${state.sources.length}`;
+  $('#libraryCount').textContent = ui.countLabel(rows.length, state.sources.length);
 
   if (!state.sources.length) {
-    const e = el('div', 'empty');
-    const pic = el('div', 'illus');
-    const img = el('img'); img.src = 'img/cat-wave.png'; img.alt = '';
-    pic.appendChild(img);
-    e.appendChild(pic);
-    e.appendChild(el('h2', null, 'Nothing here yet'));
-    e.appendChild(el('p', null, 'Search the databases under Find papers, or drop PDFs anywhere on this page. They are stored on this computer and never uploaded.'));
-    list.appendChild(e);
+    // Honest about where files live: signed in, they are also backed up to the account.
+    const where = auth.user()
+      ? 'They are kept in this browser and backed up to your account.'
+      : 'They are kept in this browser only. Sign in from the profile menu to back them up.';
+    list.appendChild(ui.emptyState({
+      kind: 'first', title: 'No papers yet',
+      body: `Search the databases under Find papers, or drop PDFs anywhere on this page. ${where}`,
+      primary: { label: 'Find papers', icon: 'search', onClick: () => go('find') },
+      secondary: { label: 'Add PDFs or citations', icon: 'upload', onClick: () => $('#addBtn').click() },
+    }));
+    return;
+  }
+  if (!rows.length) {
+    list.appendChild(ui.emptyState({
+      kind: 'nomatch', placement: 'section', title: 'No matches',
+      body: q ? `Nothing in ${group.value ? `“${group.label}”` : 'the library'} matches “${$('#filter').value.trim()}”.`
+              : `No records are in “${group.label}” yet.`,
+      primary: { label: 'Clear filters', onClick: () => { $('#filter').value = ''; libGroup = ''; renderLibrary(); } },
+    }));
     return;
   }
   for (const s of rows) list.appendChild(sourceCard(s));
@@ -648,16 +674,11 @@ async function openSource(id) {
     // yet — so the reader says so and offers the way out rather than refusing to open.
     reader = null;
     $('#pages').innerHTML = '';
-    const box = el('div', 'empty');
-    box.appendChild(el('h2', null, 'No PDF stored for this record'));
-    box.appendChild(el('p', null, source.pdfURL
-      ? 'There is a free PDF for it online. Open it, then drop the file anywhere on this page and it will attach to this record.'
-      : 'Drop the file anywhere on this page and it will attach to this record.'));
-    if (source.pdfURL) {
-      const b = el('button', 'primary', 'Open the free PDF');
-      b.onclick = () => window.open(source.pdfURL, '_blank', 'noopener');
-      box.appendChild(b);
-    }
+    const box = ui.emptyState({ kind: 'setup', title: 'No PDF for this record',
+      body: source.pdfURL
+        ? 'There is a free PDF for it online. Open it, then drop the file anywhere on this page and it attaches to this record.'
+        : 'Drop the file anywhere on this page and it attaches to this record.',
+      primary: source.pdfURL ? { label: 'Open the free PDF', onClick: () => window.open(source.pdfURL, '_blank', 'noopener') } : null });
     $('#pages').appendChild(box);
     renderPalette();
     renderInspector();
@@ -988,7 +1009,6 @@ function wire() {
   $('#addBtn').onclick = () => $('#fileInput').click();
   $('#fileInput').onchange = (e) => { addFiles([...e.target.files]); e.target.value = ''; };
   $('#filter').oninput = renderLibrary;
-  $('#stageFilter').onchange = renderLibrary;
   $('#libraryExport').onclick = () => exportSheet();
   $('#getAllPDFs').onclick = () => getMissingPDFs();
   $('#evFilter').oninput = renderEvidence;

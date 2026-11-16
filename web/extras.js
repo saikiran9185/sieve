@@ -3,6 +3,7 @@
 // exposes, so none of them owns any state of the library.
 
 import { icon, NAV_ICONS } from './icons.js';
+import { cycleTheme } from './shell.js';
 
 const $ = (s) => document.querySelector(s);
 const el = (tag, cls, text) => {
@@ -19,7 +20,7 @@ let paletteEl = null;
 function screens() {
   return [...document.querySelectorAll('.nav[data-view]')].map(b => ({
     group: 'Go to',
-    label: b.childNodes[b.childNodes.length > 1 ? 1 : 0]?.textContent?.trim() || b.dataset.view,
+    label: b.querySelector('.lbl')?.textContent?.trim() || b.title || b.dataset.view,
     icon: NAV_ICONS[b.dataset.view] || 'arrowRight',
     run: () => b.click(),
   }));
@@ -32,7 +33,7 @@ function actions(ctx) {
     { group: 'Actions', label: 'Switch review', icon: 'chevronsUpDown', run: click('#projectPicker') },
     { group: 'Actions', label: 'Back up the library', icon: 'download', run: click('#exportBtn') },
     { group: 'Actions', label: 'Restore from a backup', icon: 'folder', run: click('#importBtn') },
-    { group: 'Actions', label: 'Switch colour theme', icon: 'contrast', run: click('#themeBtn') },
+    { group: 'Actions', label: 'Switch colour theme', icon: 'contrast', run: () => cycleTheme() },
     { group: 'Actions', label: 'Account and sync', icon: 'user', run: click('#accountBtn') },
     { group: 'Actions', label: 'Keyboard shortcuts', icon: 'keyboard', run: () => shortcuts(ctx) },
   ];
@@ -223,4 +224,5 @@ export function wireExtras(ctx) {
     }
   });
   $('#paletteBtn')?.addEventListener('click', () => openPalette(ctx));
+  $('#shortcutsBtn')?.addEventListener('click', () => shortcuts(ctx));
 }

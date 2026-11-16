@@ -25,8 +25,12 @@
         </span>
         <span id="projectMeta" class="meta"></span>
       </button>
+      <button id="methodLine" class="methodline" title="The steps your review follows">
+        <span id="methodName">Choose a method</span>
+        <span id="methodStep" class="meta"></span>
+      </button>
     </header>
-    <button id="paletteBtn" class="search-btn" aria-label="Search papers, screens and actions"><span data-icon="search"></span><span>Search</span><kbd>⌘K</kbd></button>
+    <button id="paletteBtn" class="search-btn" aria-label="Search papers, screens and actions"><span data-icon="search"></span><span class="lbl">Search</span><kbd>⌘K</kbd></button>
 
     <div id="navlist">
       <button class="nav" data-view="overview" aria-current="true">Overview</button>
@@ -36,35 +40,54 @@
       <button class="nav" data-view="screening">Screening<span class="badge" id="badgeScreening"></span></button>
       <button class="nav" data-view="reader">Reader</button>
       <button class="nav" data-view="evidence">Evidence<span class="badge" id="badgeEvidence"></span></button>
-      <button class="nav" data-view="map">Map</button>
+      <p class="navgroup">Write up</p>
       <button class="nav" data-view="matrix">Matrix</button>
+      <button class="nav" data-view="map">Map</button>
       <button class="nav" data-view="frames">Frameworks</button>
       <button class="nav" data-view="prisma">PRISMA</button>
       <button class="nav" data-view="trail">AI trail<span class="badge" id="badgeTrail"></span></button>
-      <p class="navgroup">Setup</p>
-      <button class="nav" data-view="method">Method</button>
-      <button class="nav" data-view="tags">Tags<span class="badge" id="badgeTags"></span></button>
-      <button class="nav" data-view="settings">Settings</button>
-      <button class="nav" data-view="guide">Guide</button>
     </div>
 
     <footer>
-      <button id="methodLine" class="methodline">
-        <span id="methodName">Choose a method</span>
-        <span id="methodStep" class="meta"></span>
+      <button id="addBtn" class="primary" title="Add PDFs or citations"><span data-icon="plus"></span><span class="lbl">Add PDFs or citations</span></button>
+      <button id="profileBtn" class="profile-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="profileMenu" title="Account, theme, backup and more">
+        <span class="avatar" id="profileAvatar" aria-hidden="true"></span>
+        <span class="profile-text"><span id="profileName">Not signed in</span><span id="profileState" class="meta">Saved in this browser</span></span>
+        <span class="chev" aria-hidden="true" data-icon="chevronsUpDown"></span>
       </button>
-      <button id="accountBtn" class="quiet" title="Account, backup and sync">Account</button>
-      <button id="syncLine" class="sync-line" hidden><span class="dot"></span><span></span></button>
-      <button id="addBtn" class="primary">Add PDFs or citations</button>
-      <button id="themeBtn" class="quiet theme-toggle" aria-label="Switch colour theme">Theme: auto</button>
-      <div class="row">
-        <button id="exportBtn" class="quiet">Back up</button>
-        <button id="importBtn" class="quiet">Restore</button>
-      </div>
-      <div id="safety" class="safety">
-        <div class="safety-line"><span id="safetyDot" class="dot"></span><span id="safetyText">Checking…</span></div>
-        <button id="folderBtn" class="quiet">Keep a copy in a folder</button>
-        <p id="storage" class="hint"></p>
+
+      <div id="profileMenu" class="profile-menu" role="menu" hidden>
+        <div class="pm-section">
+          <button id="accountBtn" class="pm-account" role="menuitem">Account</button>
+          <button id="syncLine" class="sync-line" hidden><span class="dot"></span><span></span></button>
+        </div>
+        <div class="pm-section">
+          <p class="pm-label">Theme</p>
+          <div class="segmented pm-theme" id="themeSeg" role="radiogroup" aria-label="Colour theme">
+            <button data-theme-set="auto" role="radio">Auto</button>
+            <button data-theme-set="light" role="radio">Light</button>
+            <button data-theme-set="dark" role="radio">Dark</button>
+          </div>
+        </div>
+        <div class="pm-section">
+          <p class="pm-label">Your data</p>
+          <div class="row">
+            <button id="exportBtn" class="pm-item" role="menuitem"><span data-icon="download"></span>Back up</button>
+            <button id="importBtn" class="pm-item" role="menuitem"><span data-icon="folder"></span>Restore</button>
+          </div>
+          <div id="safety" class="safety">
+            <div class="safety-line"><span id="safetyDot" class="dot"></span><span id="safetyText">Checking…</span></div>
+            <button id="folderBtn" class="quiet">Keep a copy in a folder</button>
+            <p id="storage" class="hint"></p>
+          </div>
+        </div>
+        <div class="pm-section pm-more">
+          <button class="nav" data-view="method" role="menuitem">Method</button>
+          <button class="nav" data-view="tags" role="menuitem">Tags<span class="badge" id="badgeTags"></span></button>
+          <button class="nav" data-view="settings" role="menuitem">Settings</button>
+          <button class="nav" data-view="guide" role="menuitem">Guide</button>
+          <button id="shortcutsBtn" class="nav" role="menuitem"><span data-icon="keyboard"></span>Keyboard shortcuts<kbd>?</kbd></button>
+        </div>
       </div>
     </footer>
   </nav>

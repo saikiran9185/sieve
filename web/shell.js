@@ -35,6 +35,11 @@ function fillIcons(root = document) {
 for (const b of document.querySelectorAll('.nav[data-view]')) {
   const name = NAV_ICONS[b.dataset.view];
   if (name && !b.querySelector('.ico')) b.insertAdjacentHTML('afterbegin', icon(name));
+  // The label as a tooltip, for the icon-only sidebar at in-between widths.
+  const label = [...b.childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
+  if (label && !b.title) b.title = label.textContent.trim();
+  // Wrap the bare text so CSS can hide it in the icon rail without hiding the icon.
+  if (label) { const s = document.createElement('span'); s.className = 'lbl'; s.textContent = label.textContent; label.replaceWith(s); }
 }
 fillIcons();
 
@@ -80,7 +85,7 @@ $('#drawerClose')?.addEventListener('click', closeDrawer);
 $('#scrim')?.addEventListener('click', closeDrawer);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && body.classList.contains('drawer-open')) closeDrawer(); });
 $('#sidebar')?.addEventListener('click', (e) => {
-  if (e.target.closest('.nav, #addBtn, #projectPicker, #accountBtn, #methodLine')) closeDrawer();
+  if (e.target.closest('.nav, #addBtn, #projectPicker, #accountBtn, #methodLine, #exportBtn, #importBtn')) closeDrawer();
 });
 
 for (const b of document.querySelectorAll('#tabbar [data-go]')) {
@@ -92,14 +97,57 @@ for (const b of document.querySelectorAll('#tabbar [data-go]')) {
 }
 
 // ---------------------------------------------------------------- theme
+// Auto follows the system; Light and Dark pin it. Set in the profile menu or with ⌘K.
 const root = document.documentElement;
-const order = ['auto', 'light', 'dark'];
-const read = () => { try { return localStorage.getItem('sieve-theme') || 'auto'; } catch { return 'auto'; } };
-function applyTheme(t) {
+const THEMES = ['auto', 'light', 'dark'];
+const readTheme = () => { try { return localStorage.getItem('sieve-theme') || 'auto'; } catch { return 'auto'; } };
+export function applyTheme(t) {
   if (t === 'auto') delete root.dataset.theme; else root.dataset.theme = t;
-  const btn = $('#themeBtn');
-  if (btn) btn.textContent = `Theme: ${t}`;
+  for (const b of document.querySelectorAll('[data-theme-set]')) b.setAttribute('aria-checked', String(b.dataset.themeSet === t));
+  const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = dark ? '#1E1B19' : '#FFFFFF';
   try { localStorage.setItem('sieve-theme', t); } catch { /* private mode: keep it for this visit */ }
 }
-applyTheme(read());
-$('#themeBtn')?.addEventListener('click', () => applyTheme(order[(order.indexOf(read()) + 1) % order.length]));
+export function cycleTheme() { applyTheme(THEMES[(THEMES.indexOf(readTheme()) + 1) % THEMES.length]); }
+applyTheme(readTheme());
+for (const b of document.querySelectorAll('[data-theme-set]')) b.addEventListener('click', () => applyTheme(b.dataset.themeSet));
+
+// ---------------------------------------------------------------- profile menu
+// Everything about the person and their copy of the library, rarely needed, lives here:
+// account and sync, theme, backup and restore, storage safety, and the setup screens.
+const profileBtn = $('#profileBtn'), profileMenu = $('#profileMenu');
+function setMenu(open) {
+  if (!profileMenu) return;
+  profileMenu.hidden = !open;
+  profileBtn.setAttribute('aria-expanded', String(open));
+  if (open) profileMenu.querySelector('button:not([hidden])')?.focus({ preventScroll: true });
+}
+profileBtn?.addEventListener('click', (e) => { e.stopPropagation(); setMenu(profileMenu.hidden); });
+document.addEventListener('click', (e) => {
+  if (!profileMenu || profileMenu.hidden) return;
+  if (!e.target.closest('#profileMenu')) setMenu(false);
+  else if (e.target.closest('button') && !e.target.closest('[data-theme-set], #syncLine')) setMenu(false);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && profileMenu && !profileMenu.hidden) { setMenu(false); profileBtn.focus(); }
+});
+
+// The profile button mirrors the account button (auth.js fills it) and the sync status.
+function mirrorAccount() {
+  const name = $('#accountBtn .acct-name')?.textContent?.trim();
+  const signedIn = !!name && name.includes('@');
+  $('#profileName').textContent = signedIn ? name : 'Not signed in';
+  $('#profileAvatar').textContent = signedIn ? name[0].toUpperCase() : '';
+  $('#profileAvatar').classList.toggle('empty', !signedIn);
+  if (!signedIn) $('#profileState').textContent = 'Saved in this browser';
+}
+const acct = $('#accountBtn');
+if (acct) new MutationObserver(mirrorAccount).observe(acct, { childList: true, subtree: true });
+mirrorAccount();
+window.addEventListener('sieve:sync-status', (e) => {
+  const words = { syncing: 'Syncing…', synced: 'Synced', pending: 'Changes waiting', offline: 'Offline', error: 'Sync paused' };
+  const st = e.detail?.state;
+  if (!st || st === 'off') return;
+  $('#profileState').textContent = words[st] || '';
+  profileBtn.dataset.sync = st;
+});

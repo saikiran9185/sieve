@@ -9,7 +9,7 @@
 // rule, Instrument Serif title, orange primary button.
 
 const GUEST_KEY = 'sieve.guest';          // remembered choice to skip sign-in on this browser
-const LAST_SYNC_KEY = 'sieve.lastSynced'; // written by the sync engine once it exists
+const LAST_SYNC_KEY = 'sieve.lastSynced'; // updated whenever sync.js reports a finished sync
 
 let client = null;
 let session = null;
@@ -227,7 +227,7 @@ async function openAccountMenu() {
   row('Email', u.email);
   const used = row('Storage used', 'Checking…');
   const last = remember.get(LAST_SYNC_KEY);
-  row('Last synced', last ? new Date(last).toLocaleString() : 'Not yet. Sync arrives in the next update; your work is saved in this browser.');
+  row('Last synced', last ? new Date(last).toLocaleString() : 'Not yet. Your work is saved in this browser and uploads on the next sync.');
   body.appendChild(rows);
 
   const actions = h('div', 'row');
@@ -285,3 +285,7 @@ function link(text, onclick, cls = 'auth-link') {
   b.onclick = onclick;
   return b;
 }
+
+
+// Remember when the last sync finished, for the account sheet.
+window.addEventListener('sieve:sync-status', (e) => { if (e.detail?.state === 'synced') remember.set(LAST_SYNC_KEY, new Date().toISOString()); });

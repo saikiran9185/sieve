@@ -1,0 +1,8 @@
+{
+  "headers": [
+    { "source": "/(.*\\.js)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/(.*\\.css)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "/index.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+  ]
+}

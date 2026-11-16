@@ -790,3 +790,111 @@ button.icon .ico { width: 18px; height: 18px; }
 .welcome-dots { display: flex; gap: 6px; }
 .welcome-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); transition: width .2s var(--ease); }
 .welcome-dots span.on { width: 18px; border-radius: 3px; background: var(--text); }
+
+/* ================================================================== sidebar 2.1
+   Frequency decides the place (model/UI_ACTION_RATING.md): what you press every session
+   stays in the sidebar; account, theme, backup and setup live in the profile menu. */
+#sidebar header { padding: 0 0 8px; display: flex; flex-direction: column; gap: 0; }
+.methodline {
+  flex-direction: row; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  padding: 2px 12px 6px; min-height: 0; font-size: 12px; color: var(--dim); border: 0;
+}
+.methodline #methodName { font-weight: 400; color: var(--dim); }
+.methodline:hover #methodName { color: var(--text); }
+.methodline .meta::before { content: '· '; }
+.methodline .meta:empty { display: none; }
+
+.nav .lbl { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav .ico { flex: 0 0 auto; color: var(--faint); }
+.nav[aria-current="true"] .ico { color: var(--text); }
+.nav { justify-content: flex-start; gap: 10px; }
+
+#sidebar footer { gap: 6px; padding-top: 10px; position: relative; }
+#addBtn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+#addBtn [data-icon] { display: inline-flex; }
+
+.profile-btn {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 6px 8px; min-height: 44px; border: 0; border-radius: var(--r); background: transparent; color: var(--text);
+}
+.profile-btn:hover, .profile-btn[aria-expanded="true"] { background: var(--hover); }
+.avatar {
+  position: relative; flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--sky); color: var(--ink); font-weight: 600; font-size: 13px;
+}
+.avatar.empty { background: var(--sunk); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.profile-btn[data-sync] .avatar::after {
+  content: ''; position: absolute; right: -1px; bottom: -1px; width: 8px; height: 8px; border-radius: 50%;
+  border: 2px solid var(--side); background: var(--emerald);
+}
+.profile-btn[data-sync="syncing"] .avatar::after, .profile-btn[data-sync="pending"] .avatar::after { background: var(--orange); }
+.profile-btn[data-sync="error"] .avatar::after { background: var(--rose); }
+.profile-btn[data-sync="offline"] .avatar::after { background: var(--amber); }
+.profile-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+#profileName { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#profileState { font-size: 12px; }
+.profile-btn .chev { color: var(--faint); display: inline-flex; }
+
+.profile-menu {
+  position: absolute; left: 0; bottom: calc(100% + 6px);
+  z-index: 90; width: 280px; max-height: min(640px, calc(100vh - 32px)); overflow-y: auto;
+  background: var(--raised); border-radius: var(--r-lg, 12px); box-shadow: var(--pop); padding: 6px;
+  transform-origin: bottom left; animation: pm-in .16s var(--ease) both;
+}
+@keyframes pm-in { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
+.pm-section { display: flex; flex-direction: column; gap: 2px; padding: 6px; }
+.pm-section + .pm-section { border-top: 1px solid var(--line); }
+.pm-label { margin: 0 0 4px; padding: 0 6px; font-size: 12px; color: var(--faint); }
+.pm-account { display: flex; flex-direction: column; align-items: flex-start; gap: 0; text-align: left; border: 0; background: none; padding: 6px; border-radius: var(--r); min-height: 0; }
+.pm-account:hover { background: var(--hover); }
+.pm-account .acct-name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.pm-section .sync-line { padding: 0 6px; }
+.pm-theme { display: flex; width: 100%; }
+.pm-theme button { flex: 1; }
+.pm-theme button[aria-checked="true"] { background: var(--raised); box-shadow: 0 0 0 1px var(--line); font-weight: 600; color: var(--text); }
+.pm-item { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-start; border: 0; background: none; padding: 6px; min-height: 32px; border-radius: var(--r); font-size: 13px; }
+.pm-item:hover { background: var(--hover); }
+.pm-item .ico, .pm-more .ico { color: var(--faint); }
+.profile-menu .safety { padding: 6px 6px 0; }
+.pm-more .nav { min-height: 32px; font-size: 13px; padding-left: 6px; }
+.pm-more .nav kbd { margin-left: auto; }
+:root[data-theme="dark"] .profile-menu { box-shadow: 0 0 0 1px var(--line), var(--pop); }
+
+/* In-between widths: the sidebar folds to an icon rail so the work keeps its room.
+   Labels come back as tooltips (title), the profile menu opens beside the rail. */
+@media (min-width: 861px) and (max-width: 1100px) {
+  :root { --sidebar: 64px; }
+  #sidebar { padding: 12px 8px; align-items: center; }
+  .brandline { padding: 0 0 12px; justify-content: center; }
+  .wordmark { font-size: 0; }
+  .wordmark i { width: 10px; height: 10px; }
+  .wordmark::before { content: 'S'; font: 400 26px/1 var(--serif); }
+  #sidebar header { display: none; }
+  #paletteBtn { width: 44px; justify-content: center; padding: 0; min-height: 40px; }
+  #paletteBtn .lbl, #paletteBtn kbd { display: none; }
+  #navlist { width: 100%; align-items: center; scrollbar-width: none; }
+  .navgroup { margin: 8px 0; height: 1px; width: 24px; padding: 0; font-size: 0; background: var(--line); }
+  .nav { width: 44px; height: 40px; min-height: 40px; justify-content: center; padding: 0; position: relative; }
+  .nav .lbl { display: none; }
+  .nav .badge { position: absolute; top: 2px; right: 2px; font-size: 10px; }
+  .nav .badge:empty { display: none; }
+  #sidebar footer { width: 100%; align-items: center; border-top: 0; }
+  #addBtn { width: 44px; height: 44px; padding: 0; min-height: 44px; }
+  #addBtn .lbl { display: none; }
+  .profile-btn { width: 44px; justify-content: center; padding: 0; }
+  .profile-btn .profile-text, .profile-btn .chev { display: none; }
+  .profile-menu { left: calc(100% + 8px); right: auto; bottom: 0; transform: none; animation-name: pm-in-side; transform-origin: bottom left; }
+  @keyframes pm-in-side { from { opacity: 0; transform: translateX(-6px) scale(.97); } to { opacity: 1; transform: none; } }
+  .pm-more .nav { width: 100%; height: auto; justify-content: flex-start; padding: 6px; }
+  .pm-more .nav .lbl { display: block; }
+  .pm-more .nav .badge { position: static; }
+}
+
+/* Phone drawer: the whole sidebar scrolls, so nothing can squeeze the navigation. */
+@media (max-width: 860px) {
+  #sidebar { overflow-y: auto; }
+  #navlist { flex: 0 0 auto; overflow: visible; }
+  #sidebar footer { margin-top: auto; }
+  .profile-menu { position: static; width: auto; transform: none; animation: none; box-shadow: none; background: var(--sunk); margin-top: 4px; max-height: none; }
+}
+@media (prefers-reduced-motion: reduce) { .profile-menu { animation: none; } }
